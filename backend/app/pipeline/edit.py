@@ -1,7 +1,7 @@
 """Full edit: probe -> transcribe -> face focus -> director -> cuts -> captions -> render."""
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from app.config import settings
@@ -11,7 +11,8 @@ from app.pipeline.director import direct
 from app.pipeline.faces import face_center
 from app.pipeline.frames import sample_frames
 from app.pipeline.probe import ProbeInfo, probe as probe_file
-from app.pipeline.render_ffmpeg import RenderPlan, choose_reframe, render
+from app.pipeline.render_ffmpeg import RenderPlan, choose_reframe, finalize, render
+from app.pipeline.render_hyperframes import build_data, hyperframes_available, render_motion
 from app.pipeline.storyboard import Storyboard, removed_word_set
 from app.pipeline.styles import StylePreset, get_preset
 from app.pipeline.subtitles import build_ass
@@ -34,6 +35,7 @@ class EditInput:
     transcript: dict | None = None
     face_x: float | None = None
     face_checked: bool = False
+    motion: bool = False  # brag-style HyperFrames motion layer (slower, opt-in)
 
 
 @dataclass
@@ -50,6 +52,7 @@ class EditOutput:
     duration_out: float
     summary: list[str]
     question: str
+    motion: bool = False
 
 
 def find_music(style: str) -> Path | None:
@@ -156,10 +159,30 @@ async def run_edit(inp: EditInput) -> EditOutput:
         music_file=music,
         out_duration=out_duration,
     )
-    outputs = await render(inp.src, probe, plan, inp.workdir, Path(settings.assets_dir) / "fonts")
+    fonts = Path(settings.assets_dir) / "fonts"
+    used_motion = False
+    if inp.motion and hyperframes_available():
+        try:
+            base = await render(inp.src, probe, replace(plan, ass_file=None), inp.workdir, fonts, out_name="base.mp4")
+            data = build_data(
+                words=words, segments=segments, removed=removed, preset=preset,
+                out_duration=out_duration, storyboard=sb.model_dump(), accent=accent,
+            )
+            master = await render_motion(base, data, inp.workdir)
+            used_motion = True
+        except Exception as exc:
+            log.warning("motion render failed, using the standard edit: %s", exc)
+    if not used_motion:
+        master = await render(inp.src, probe, plan, inp.workdir, fonts)
+    outputs = await finalize(master, out_duration, inp.workdir)
+
     summary = make_summary(
         probe.duration, out_duration, sb, reframe, preset, probe.has_audio, bool(sb.captions_enabled and words), music is not None
     )
+    if used_motion:
+        summary.insert(-1, "Motion graphics: kinetic captions, zoom punches, emoji pops, end card")
+    elif inp.motion:
+        summary.append("Motion graphics aren't available right now, so this is the standard edit")
     return EditOutput(
         master=outputs["master"],
         preview=outputs["preview"],
@@ -173,4 +196,5 @@ async def run_edit(inp: EditInput) -> EditOutput:
         duration_out=out_duration,
         summary=summary,
         question=sb.question_for_user,
+        motion=used_motion,
     )

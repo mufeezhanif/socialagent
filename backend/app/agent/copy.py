@@ -20,8 +20,17 @@ ONLY_VIDEO = "I edit videos for now. Send me a video 🎬"
 NO_DRAFT = "Send me a video to get started 🎬"
 
 EDIT_READY = "✨ *Edit ready* ({din}s → {dout}s) · style: {style}\n{bullets}"
-APPROVAL_OPTIONS = "\n\nReply:\n1 ✅ approve\n2 ✏️ change something\n3 🎨 try another style\n4 🗑 discard\n(or react 👍 to approve)"
 QUESTION = "\n\n❓ {question}"
+MOTION_START = "✨ Adding motion graphics: kinetic captions, zoom punches, emoji pops and an end card. Takes 2-4 minutes..."
+MOTION_UNAVAILABLE = "Motion graphics aren't set up on this server yet."
+
+
+def approval_options(motion: bool = False) -> str:
+    lines = ["\n\nReply:", "1 ✅ approve", "2 ✏️ change something", "3 🎨 try another style", "4 🗑 discard"]
+    if motion:
+        lines.append("5 ✨ motion graphics (2-4 min)")
+    lines.append("(or react 👍 to approve)")
+    return "\n".join(lines)
 
 ASK_CHANGES = (
     "What should I change? Type it or send a voice note.\n"

@@ -11,6 +11,7 @@ from app.db import SessionLocal
 from app.models import Draft, DraftStatus as S, Job, User, utcnow
 from app.pipeline.edit import EditInput, EditOutput, run_edit
 from app.pipeline.probe import probe
+from app.pipeline.render_hyperframes import hyperframes_available
 from app.pipeline.styles import get_preset
 from app.services import captions, messaging, publisher
 from app.services.audit import audit
@@ -51,7 +52,7 @@ async def _send_preview(ctx: Ctx, draft: Draft, result: EditOutput) -> None:
         dout=f"{result.duration_out:.0f}",
         style=preset.label,
         bullets="\n".join(f"• {b}" for b in result.summary),
-    ) + copy.APPROVAL_OPTIONS
+    ) + copy.approval_options(hyperframes_available())
     if result.question:
         text += copy.QUESTION.format(question=result.question)
     await ctx.say(text, draft)
@@ -85,6 +86,7 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
 
     await messaging.typing(draft.channel, draft.chat_ref)
     style_request = (job.payload or {}).get("style")
+    motion = bool((job.payload or {}).get("motion") or (revision_mode and (draft.probe or {}).get("motion")))
     new_revision = draft.revision + 1 if revision_mode else draft.revision
     started = time.time()
     try:
@@ -101,6 +103,7 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
                 transcript=draft.transcript,
                 face_x=(draft.probe or {}).get("face_x"),
                 face_checked="face_x" in (draft.probe or {}),
+                motion=motion,
             )
         )
     except Exception as exc:
@@ -113,7 +116,7 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
         tried = list((d.probe or {}).get("styles_tried") or [])
         if result.storyboard["style"] not in tried:
             tried.append(result.storyboard["style"])
-        d.probe = {**result.probe, "face_x": result.face_x, "styles_tried": tried}
+        d.probe = {**result.probe, "face_x": result.face_x, "styles_tried": tried, "motion": result.motion}
         d.transcript = result.transcript
         d.storyboard = result.storyboard
         d.style = result.storyboard["style"]

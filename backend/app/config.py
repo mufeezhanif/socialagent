@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     assets_dir: str = str(REPO_DIR / "assets")
 
     default_timezone: str = "Asia/Karachi"
-    render_engine: str = "ffmpeg"
+    render_engine: str = "ffmpeg"  # ffmpeg | hyperframes (falls back to ffmpeg on any error)
+    hyperframes_cli: str = ""  # path to node_modules/hyperframes/bin/hyperframes.mjs
+    hyperframes_workers: str = "auto"
     max_video_seconds: int = 180
     max_upload_mb: int = 100
     max_revisions: int = 3

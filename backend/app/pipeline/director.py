@@ -16,6 +16,8 @@ off-topic asides and rambling. Filler words (um, uh) and long pauses are removed
 - Never invent facts: no prices, dates, offers, names or claims that are not in the transcript or the user's notes.
 - punchline_text lands the message at the end (max 7 words). cta_text only if the user's notes or brand kit give one.
 - highlight_word_indices: up to 8 words that carry meaning (numbers, key nouns, the promise).
+- emoji_moments: up to 4 emoji that match the moment (🔥 for a strong claim, 💰 for money, 😂 for a joke); none for \
+serious or sensitive topics.
 - style: pick what fits the content and brand tone, unless the user asked for a specific style - then use it.
 - crop_mode: "crop" only for one clearly centred, steady subject; "blur_pad" for several people, wide shots, \
 on-screen text or doubt; "auto" lets face detection decide.
@@ -70,7 +72,7 @@ async def direct(
     if result is None:
         sb = fallback_storyboard(default_style, len(words))
         if previous:
-            sb = Storyboard.model_validate({**previous, "style": default_style})
+            sb = Storyboard.model_validate({"emoji_moments": [], **previous, "style": default_style})
         return validate_storyboard(sb, len(words), duration), False
     if style_request:
         result.style = style_request  # an explicit user request always wins

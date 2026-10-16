@@ -37,6 +37,7 @@ export interface Me {
   instagram: { username: string; account_type: string; profile_picture_url: string; status: string } | null
   whatsapp: { linked: boolean; phone: string; pending_code: string | null } | null
   instagram_configured: boolean
+  features: { motion: boolean }
 }
 
 export interface DraftSummary {

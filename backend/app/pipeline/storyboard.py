@@ -15,11 +15,17 @@ class RemoveRange(BaseModel):
     reason: str = Field(description="Short reason shown to the user, e.g. 'false start'")
 
 
+class EmojiMoment(BaseModel):
+    word_index: int = Field(description="Word index where the emoji pops in")
+    emoji: str = Field(description="A single emoji")
+
+
 class Storyboard(BaseModel):
     style: Style
     hook_text: str = Field(description="On-screen hook for the first ~2.5 s, max 6 words, empty for none")
     remove_ranges: list[RemoveRange] = Field(description="Word ranges to cut: false starts, repeats, apologies, off-topic")
     highlight_word_indices: list[int] = Field(description="Up to 8 word indices to emphasise in captions")
+    emoji_moments: list[EmojiMoment] = Field(description="Up to 4 emoji pops on key words; empty for serious content")
     punchline_text: str = Field(description="End-card line for the last ~2 s, max 7 words, empty for none")
     cta_text: str = Field(description="Small call to action under the punchline, empty for none")
     crop_mode: Literal["auto", "blur_pad", "crop"]
@@ -61,6 +67,10 @@ def validate_storyboard(sb: Storyboard, n_words: int, duration: float) -> Storyb
     data["remove_ranges"] = ranges
 
     data["highlight_word_indices"] = sorted({i for i in data["highlight_word_indices"] if 0 <= i < n_words})[:8]
+    data["emoji_moments"] = [
+        m for m in data["emoji_moments"]
+        if 0 <= int(m["word_index"]) < n_words and 0 < len(m["emoji"].strip()) <= 6
+    ][:4]
     max_trim = max(0.0, duration / 3)
     data["trim_start_s"] = min(max(0.0, float(data["trim_start_s"])), max_trim)
     data["trim_end_s"] = min(max(0.0, float(data["trim_end_s"])), max_trim)
@@ -78,6 +88,7 @@ def fallback_storyboard(style: str, n_words: int) -> Storyboard:
         hook_text="",
         remove_ranges=[],
         highlight_word_indices=[],
+        emoji_moments=[],
         punchline_text="",
         cta_text="",
         crop_mode="auto",

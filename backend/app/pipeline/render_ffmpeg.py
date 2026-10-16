@@ -106,7 +106,10 @@ def build_filtergraph(probe: ProbeInfo, plan: RenderPlan, music_input: int | Non
     return ";".join(parts)
 
 
-async def render(src: Path, probe: ProbeInfo, plan: RenderPlan, workdir: Path, fonts_dir: Path) -> dict[str, Path]:
+async def render(
+    src: Path, probe: ProbeInfo, plan: RenderPlan, workdir: Path, fonts_dir: Path, out_name: str = "master.mp4"
+) -> Path:
+    """Cut, reframe, grade, captions (if plan.ass_file) and audio in one FFmpeg pass."""
     workdir.mkdir(parents=True, exist_ok=True)
     if fonts_dir.is_dir():
         shutil.copytree(fonts_dir, workdir / "fonts", dirs_exist_ok=True)
@@ -123,7 +126,7 @@ async def render(src: Path, probe: ProbeInfo, plan: RenderPlan, workdir: Path, f
         cmd += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
         silence_input = next_input
 
-    master = workdir / "master.mp4"
+    master = workdir / out_name
     graph = build_filtergraph(probe, plan, music_input, silence_input)
     cmd += [
         "-filter_complex", graph, "-map", "[vout]", "-map", "[aout]",
@@ -132,22 +135,26 @@ async def render(src: Path, probe: ProbeInfo, plan: RenderPlan, workdir: Path, f
         "-t", f"{plan.out_duration:.3f}", master.name,
     ]
     await run(cmd, timeout=180 + plan.out_duration * 10, cwd=str(workdir))
+    return master
 
+
+async def finalize(master: Path, out_duration: float, workdir: Path) -> dict[str, Path]:
+    """WhatsApp-sized preview (<= 14.5 MB) and a cover frame from the master."""
     preview = workdir / "preview.mp4"
-    kbps = int(min(2500, max(250, PREVIEW_MAX_MB * 8192 / max(plan.out_duration, 1) - 96)))
+    kbps = int(min(2500, max(250, PREVIEW_MAX_MB * 8192 / max(out_duration, 1) - 96)))
     await run(
         [
-            "ffmpeg", "-y", "-v", "error", "-i", master.name, "-vf", "scale=720:1280",
+            "ffmpeg", "-y", "-v", "error", "-i", str(master), "-vf", "scale=720:1280",
             "-c:v", "libx264", "-preset", "veryfast", "-b:v", f"{kbps}k", "-maxrate", f"{int(kbps * 1.3)}k",
             "-bufsize", f"{kbps * 2}k", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", preview.name,
         ],
-        timeout=120 + plan.out_duration * 6,
+        timeout=120 + out_duration * 6,
         cwd=str(workdir),
     )
 
     cover = workdir / "cover.jpg"
     await run(
-        ["ffmpeg", "-y", "-v", "error", "-ss", f"{min(1.0, plan.out_duration / 3):.2f}", "-i", master.name,
+        ["ffmpeg", "-y", "-v", "error", "-ss", f"{min(1.0, out_duration / 3):.2f}", "-i", str(master),
          "-frames:v", "1", "-vf", "scale=540:960", "-q:v", "4", cover.name],
         timeout=60,
         cwd=str(workdir),

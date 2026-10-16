@@ -5,6 +5,7 @@ import { ArrowLeft, Bot, CheckCircle2, Circle, ExternalLink, RefreshCw, Sparkles
 import { toast } from 'sonner'
 import { api, WORKING, type DraftDetail } from '../api'
 import { Button, Card, fmtDate, Input, Spinner, StatusBadge, Textarea } from '../ui'
+import { useMe } from '../App'
 
 const STYLES = ['clean', 'hype', 'cinematic', 'funny', 'deadpan', 'luxury']
 const ACTION_LABELS: Record<string, string> = {
@@ -12,6 +13,7 @@ const ACTION_LABELS: Record<string, string> = {
   edited_video: 'Edited the video',
   requested_changes: 'Asked for changes',
   requested_style: 'Asked for another style',
+  requested_motion: 'Asked for motion graphics',
   approved_edit: 'Approved the edit',
   wrote_captions: 'Wrote caption options',
   chose_caption: 'Picked a caption',
@@ -35,6 +37,7 @@ function toLocalInput(date: Date) {
 export default function DraftDetailPage() {
   const { id } = useParams()
   const qc = useQueryClient()
+  const me = useMe()
   const key = ['draft', id]
   const q = useQuery({
     queryKey: key,
@@ -173,6 +176,11 @@ export default function DraftDetailPage() {
                 <Button onClick={() => act('approve', 'approve')} loading={busy === 'approve'}>
                   ✅ Approve edit
                 </Button>
+                {me.data?.features?.motion && (
+                  <Button variant="secondary" onClick={() => act('motion', 'motion')} loading={busy === 'motion'} title="Kinetic captions, zoom punches, emoji pops, end card (2-4 min)">
+                    ✨ Motion graphics
+                  </Button>
+                )}
                 {STYLES.filter((s) => s !== d.style).map((s) => (
                   <Button key={s} variant="secondary" onClick={() => act(`style-${s}`, 'style', { style: s })} loading={busy === `style-${s}`}>
                     🎨 {s}

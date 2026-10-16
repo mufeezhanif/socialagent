@@ -14,6 +14,7 @@ APPROVE_WORDS = {"1", "approve", "approved", "yes", "y", "ok", "okay", "good", "
                  "looks good", "nice", "done", "👍", "✅", "👌", "❤️", "🔥", "go", "go ahead"}
 DISCARD_WORDS = {"4", "discard", "delete", "trash", "drop it", "no thanks"}
 SKIP_WORDS = {"skip", "no", "nope", "none", "nothing", "n/a", "na", "-", "no thanks", "nah"}
+MOTION_WORDS = {"5", "motion", "motion graphics", "animate", "animate it", "animated", "brag", "make it pop", "✨"}
 LIKE_REACTIONS = {"👍", "❤️", "❤", "🔥", "✅", "👌", "😍", "💯"}
 
 
@@ -57,6 +58,8 @@ async def approval(text: str) -> Intent:
         return Intent("approve")
     if t in DISCARD_WORDS:
         return Intent("discard")
+    if t in MOTION_WORDS:
+        return Intent("motion")
     if t == "2":
         return Intent("change")
     if t.startswith("2 ") or t.startswith("2."):

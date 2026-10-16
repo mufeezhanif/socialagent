@@ -150,6 +150,11 @@ async def style(draft_id: str, body: StyleBody, user: User = Depends(current_use
     return await _act(user, draft_id, {S.AWAITING_VIDEO_APPROVAL, S.AWAITING_CHANGE_NOTES}, engine.try_style, body.style)
 
 
+@router.post("/{draft_id}/motion")
+async def motion(draft_id: str, user: User = Depends(current_user)):
+    return await _act(user, draft_id, {S.AWAITING_VIDEO_APPROVAL, S.AWAITING_CHANGE_NOTES}, engine.try_motion)
+
+
 @router.post("/{draft_id}/discard")
 async def discard(draft_id: str, user: User = Depends(current_user)):
     return await _act(user, draft_id, None, engine.discard)

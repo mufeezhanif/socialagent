@@ -22,6 +22,7 @@ from app.config import settings
 from app.db import SessionLocal
 from app.integrations import gateway
 from app.models import BrandProfile, Draft, DraftStatus as S, Message, User, WhatsAppLink, utcnow
+from app.pipeline.render_hyperframes import hyperframes_available
 from app.pipeline.styles import get_preset, next_style
 from app.services import messaging
 from app.services.audit import audit
@@ -267,12 +268,14 @@ async def dispatch(ctx: Ctx, ev: InboundEvent) -> None:
             await try_style(ctx, draft, intent.data.get("style") or None)
         elif intent.name == "discard":
             await discard(ctx, draft)
+        elif intent.name == "motion":
+            await try_motion(ctx, draft)
         else:
-            await ctx.say(copy.UNCLEAR + copy.APPROVAL_OPTIONS, draft)
+            await ctx.say(copy.UNCLEAR + copy.approval_options(hyperframes_available()), draft)
     elif st == S.AWAITING_CHANGE_NOTES:
         if low in {"cancel", "back", "nothing", "never mind", "nevermind"}:
             draft.status = S.AWAITING_VIDEO_APPROVAL
-            await ctx.say("OK, no changes." + copy.APPROVAL_OPTIONS, draft)
+            await ctx.say("OK, no changes." + copy.approval_options(hyperframes_available()), draft)
         else:
             await request_changes(ctx, draft, text)
     elif st == S.AWAITING_CONTEXT:
@@ -396,6 +399,20 @@ async def try_style(ctx: Ctx, draft: Draft, style: str | None) -> None:
         dedupe_key=f"style:{draft.id}:{new_style}:r{draft.revision}",
     )
     await ctx.say(copy.NEW_STYLE.format(style=get_preset(new_style).label), draft)
+
+
+async def try_motion(ctx: Ctx, draft: Draft) -> None:
+    if not hyperframes_available():
+        draft.status = S.AWAITING_VIDEO_APPROVAL
+        await ctx.say(copy.MOTION_UNAVAILABLE + copy.approval_options(False), draft)
+        return
+    draft.status = S.REVISING
+    audit(ctx.session, ctx.user.id, draft.id, "human", "requested_motion")
+    await enqueue(
+        ctx.session, "revise_video", draft_id=draft.id, payload={"motion": True},
+        dedupe_key=f"motion:{draft.id}:r{draft.revision}",
+    )
+    await ctx.say(copy.MOTION_START, draft)
 
 
 async def discard(ctx: Ctx, draft: Draft) -> None:
