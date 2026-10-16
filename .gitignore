@@ -1,0 +1,30 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# node
+node_modules/
+
+# build output
+frontend/dist/
+backend/app/static/
+
+# runtime data
+backend/data/
+data/
+wa-auth/
+wa-gateway/wa-auth/
+samples/out/
+*.db
+
+# not ours to publish / large media
+docs/
+samples/*.wav
+samples/*.mp4

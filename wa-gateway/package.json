@@ -1,0 +1,28 @@
+{
+  "name": "wa-gateway",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Baileys WhatsApp gateway: moves messages and media between WhatsApp and the FastAPI app",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "express": "5.3.0",
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1",
+    "typescript": "5.9.3"
+  }
+}
