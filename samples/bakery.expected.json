@@ -1,0 +1,16 @@
+{
+  "description": "Answer key for samples/bakery.mp4: what a careful editor keeps and cuts.",
+  "segments": [
+    {"text": "Hi, I'm Sara from Crumbs Bakery.", "expect": "keep"},
+    {"text": "Um,", "expect": "cut", "why": "filler"},
+    {"text": "Today I'm going to show you how we make our chocolate cake.", "expect": "cut", "why": "repeated take"},
+    {"text": "Sorry, let me start again.", "expect": "cut", "why": "false start"},
+    {"text": "Today I'm going to show you how we bake our famous chocolate cake.", "expect": "keep"},
+    {"text": "First, we use real butter, never margarine.", "expect": "keep"},
+    {"text": "Uh,", "expect": "cut", "why": "filler"},
+    {"text": "Second, we bake it slowly for forty minutes.", "expect": "keep"},
+    {"text": "Oh, by the way, my cat is sleeping on the sofa right now.", "expect": "cut", "why": "off-topic aside"},
+    {"text": "Third, we add a thick layer of chocolate ganache.", "expect": "keep"},
+    {"text": "Order yours this weekend and get twenty percent off.", "expect": "keep"}
+  ]
+}
