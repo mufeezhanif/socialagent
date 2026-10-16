@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -329,7 +329,17 @@ async def dispatch(ctx: Ctx, ev: InboundEvent) -> None:
 # ---------------------------------------------------------------- actions (also used by the dashboard)
 
 
-async def start_draft(ctx: Ctx, src: Path, user_context: str | None) -> Draft:
+DAILY_VIDEO_LIMIT = 25
+
+
+async def start_draft(ctx: Ctx, src: Path, user_context: str | None) -> Draft | None:
+    since = utcnow() - timedelta(hours=24)
+    recent = await ctx.session.scalar(
+        select(func.count(Draft.id)).where(Draft.user_id == ctx.user.id, Draft.created_at >= since)
+    )
+    if recent >= DAILY_VIDEO_LIMIT:
+        await ctx.say(f"You've hit today's limit of {DAILY_VIDEO_LIMIT} videos. Try again tomorrow.")
+        return None
     previous = await active_draft(ctx)
     replaced = previous is not None and previous.status not in S.TERMINAL
     if replaced:

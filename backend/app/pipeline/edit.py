@@ -56,13 +56,11 @@ class EditOutput:
 
 
 def find_music(style: str) -> Path | None:
+    """Music bed for the style (assets/music/<style>.mp3). Calm styles have none on purpose."""
     music_dir = Path(settings.assets_dir) / "music"
-    if not music_dir.is_dir():
-        return None
-    for pattern in (f"{style}*", "*"):
-        for candidate in sorted(music_dir.glob(pattern)):
-            if candidate.suffix.lower() in {".mp3", ".m4a", ".wav", ".ogg"}:
-                return candidate
+    for candidate in sorted(music_dir.glob(f"{style}.*")) if music_dir.is_dir() else []:
+        if candidate.suffix.lower() in {".mp3", ".m4a", ".wav", ".ogg"}:
+            return candidate
     return None
 
 

@@ -64,6 +64,8 @@ The WhatsApp gateway (`cd wa-gateway && npm install && npm start`) links as a Wh
 - [FFmpeg](https://ffmpeg.org) and libass: rendering and captions
 - [OpenCV](https://opencv.org) (Apache-2.0): face detection for smart cropping
 - [Anthropic Claude API](https://docs.anthropic.com): edit director, intent parsing, captions
+- Music beds: "Happy Beats / Business Moves" by [ende.app](https://ende.app/en) (CC BY 4.0), see `assets/music/CREDITS.md`
+- [HyperFrames](https://github.com/heygen-com/hyperframes) (Apache-2.0) and [GSAP](https://gsap.com) (standard no-charge license): motion graphics
 - [Anton font](https://github.com/googlefonts/AntonFont) (SIL OFL 1.1, see `assets/fonts/OFL-Anton.txt`)
 - Style presets and storyboard structure inspired by the [brag](https://github.com/latent-spaces/brag) skill (MIT)
 - React, Vite, Tailwind CSS, TanStack Query, lucide-react, sonner, qrcode.react, FastAPI, SQLAlchemy
