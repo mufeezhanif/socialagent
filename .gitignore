@@ -28,3 +28,5 @@ samples/out/
 docs/
 samples/*.wav
 samples/*.mp4
+samples/real/
+samples/out/
