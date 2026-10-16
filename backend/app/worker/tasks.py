@@ -118,7 +118,7 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
             tried.append(result.storyboard["style"])
         d.probe = {**result.probe, "face_x": result.face_x, "styles_tried": tried, "motion": result.motion}
         d.transcript = result.transcript
-        d.storyboard = result.storyboard
+        d.storyboard = {**result.storyboard, "trace": result.trace, "editor": result.editor}
         d.style = result.storyboard["style"]
         d.edit_summary = result.summary
         d.master_path, d.preview_path, d.cover_path = str(result.master), str(result.preview), str(result.cover)
@@ -127,7 +127,7 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
         audit(
             session, user.id, d.id, "ai", "edited_video",
             revision=new_revision, style=d.style, seconds=round(time.time() - started, 1),
-            summary=result.summary, director="claude" if result.from_ai else "fallback",
+            summary=result.summary, director=result.editor, tools=len(result.trace),
         )
         if d.status == expected:  # the user may have moved on (sent a new video, discarded)
             d.status = S.AWAITING_VIDEO_APPROVAL
@@ -150,9 +150,14 @@ async def caption_pack(job: Job) -> None:
     draft, user, brand = loaded
     await messaging.typing(draft.channel, draft.chat_ref)
     tweak = (job.payload or {}).get("tweak")
+    words = (draft.transcript or {}).get("words") or []
+    removed = set()
+    for r in (draft.storyboard or {}).get("remove_ranges") or []:
+        removed.update(range(r["start_word"], r["end_word"] + 1))
+    kept_text = " ".join(w["text"] for i, w in enumerate(words) if i not in removed)
     try:
         pack, from_ai = await captions.generate(
-            transcript_text=(draft.transcript or {}).get("text", ""),
+            transcript_text=kept_text,
             storyboard=draft.storyboard or {},
             user_context=draft.user_context,
             brand=brand,

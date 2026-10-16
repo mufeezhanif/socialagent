@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.integrations import claude
+from app.integrations import llm
 from app.pipeline.styles import STYLE_ORDER
 
 APPROVE_WORDS = {"1", "approve", "approved", "yes", "y", "ok", "okay", "good", "great", "perfect", "love it",
@@ -69,14 +69,14 @@ async def approval(text: str) -> Intent:
     style = _style_in(t)
     if style and len(t.split()) <= 5:
         return Intent("style", {"style": style})
-    result = await claude.parse(
+    result = await llm.structured(
         ApprovalReply,
         system=(
             "Classify a creator's reply to an edited video preview. approve = they are happy; change = they want an edit "
             "(put the instruction in notes); style = they want a different look (style is one of: "
             + ", ".join(STYLE_ORDER) + " or empty); discard = throw it away; unclear = anything else."
         ),
-        content=text,
+        text=text,
         effort="low",
         max_tokens=2000,
     )
@@ -99,14 +99,14 @@ async def caption(text: str) -> Intent:
     m = re.fullmatch(r"(?:option\s*|#)?([123])", t)
     if m:
         return Intent("choose", {"option": int(m.group(1))})
-    result = await claude.parse(
+    result = await llm.structured(
         CaptionReply,
         system=(
             "A creator was shown 3 numbered caption options for an Instagram Reel. Classify their reply: choose (picked an "
             "option), own_caption (they wrote the caption themselves; copy it exactly into text), tweak (they want changes; "
             "put the instruction in text and the option number if they named one), unclear."
         ),
-        content=text,
+        text=text,
         effort="low",
         max_tokens=2000,
     )
@@ -133,14 +133,14 @@ async def schedule_time(text: str, now_local: datetime) -> datetime | None:
     parsed = parse_time(text, now_local)
     if parsed:
         return parsed
-    result = await claude.parse(
+    result = await llm.structured(
         TimeReply,
         system=(
             "Convert the user's requested posting time into an ISO 8601 datetime with UTC offset. "
             f"Current local time is {now_local.isoformat()} ({now_local.tzname()}). Interpret times in that timezone. "
             "Set understood=false if it is not a time."
         ),
-        content=text,
+        text=text,
         effort="low",
         max_tokens=1500,
     )

@@ -55,7 +55,7 @@ async def detail(session: AsyncSession, d: Draft) -> dict:
         "preview_url": _url(d.preview_path),
         "edit_summary": d.edit_summary or [],
         "storyboard": {k: sb.get(k) for k in ("hook_text", "punchline_text", "cta_text", "scene_description",
-                                              "question_for_user", "edit_notes", "style", "music")},
+                                              "question_for_user", "edit_notes", "style", "music", "trace", "editor")},
         "transcript": (d.transcript or {}).get("text", ""),
         "user_context": d.user_context,
         "revision_notes": d.revision_notes or [],

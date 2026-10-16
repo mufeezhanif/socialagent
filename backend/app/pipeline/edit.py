@@ -5,9 +5,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from app.config import settings
-from app.integrations import claude
+from app.integrations import llm
 from app.pipeline.cuts import keep_segments, output_duration
-from app.pipeline.director import direct
+from app.pipeline.editor_agent import run_editor
 from app.pipeline.faces import face_center
 from app.pipeline.frames import sample_frames
 from app.pipeline.probe import ProbeInfo, probe as probe_file
@@ -53,6 +53,8 @@ class EditOutput:
     summary: list[str]
     question: str
     motion: bool = False
+    editor: str = "rules"
+    trace: list[str] = field(default_factory=list)
 
 
 def find_music(style: str) -> Path | None:
@@ -107,8 +109,8 @@ async def run_edit(inp: EditInput) -> EditOutput:
     words = transcript.get("words", [])
     face_x = inp.face_x if inp.face_checked else await face_center(str(inp.src), probe.duration)
 
-    frames = await sample_frames(str(inp.src), probe.duration, inp.workdir / "frames") if claude.enabled() else []
-    sb, from_ai = await direct(
+    frames = await sample_frames(str(inp.src), probe.duration, inp.workdir / "frames") if llm.any_configured() else []
+    editor = await run_editor(
         frames=frames,
         words=words,
         probe=probe.to_dict(),
@@ -118,7 +120,10 @@ async def run_edit(inp: EditInput) -> EditOutput:
         brand=inp.brand,
         change_requests=inp.change_requests,
         previous=inp.previous_storyboard,
+        motion_requested=inp.motion,
     )
+    sb, from_ai = editor.storyboard, editor.from_ai
+    want_motion = inp.motion or editor.motion
 
     removed = removed_word_set(sb)
     segments = keep_segments(words, probe.duration, removed, trim_start=sb.trim_start_s, trim_end=sb.trim_end_s)
@@ -159,7 +164,7 @@ async def run_edit(inp: EditInput) -> EditOutput:
     )
     fonts = Path(settings.assets_dir) / "fonts"
     used_motion = False
-    if inp.motion and hyperframes_available():
+    if want_motion and hyperframes_available():
         try:
             base = await render(inp.src, probe, replace(plan, ass_file=None), inp.workdir, fonts, out_name="base.mp4")
             data = build_data(
@@ -179,7 +184,7 @@ async def run_edit(inp: EditInput) -> EditOutput:
     )
     if used_motion:
         summary.insert(-1, "Motion graphics: kinetic captions, zoom punches, emoji pops, end card")
-    elif inp.motion:
+    elif want_motion:
         summary.append("Motion graphics aren't available right now, so this is the standard edit")
     return EditOutput(
         master=outputs["master"],
@@ -195,4 +200,6 @@ async def run_edit(inp: EditInput) -> EditOutput:
         summary=summary,
         question=sb.question_for_user,
         motion=used_motion,
+        editor=editor.editor,
+        trace=editor.trace,
     )

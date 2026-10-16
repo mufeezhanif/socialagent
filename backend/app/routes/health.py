@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_session
-from app.integrations import claude, gateway
+from app.integrations import claude, gateway, llm
 
 router = APIRouter(tags=["health"])
 
@@ -28,6 +28,8 @@ async def healthz(session: AsyncSession = Depends(get_session)):
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "whatsapp": wa,
         "claude": claude.enabled(),
+        "llm_providers": llm.names(),
+        "transcription": "groq" if settings.groq_api_key and settings.transcribe_provider != "local" else "local",
         "instagram": bool(settings.ig_app_id),
         "render_engine": settings.render_engine,
     }

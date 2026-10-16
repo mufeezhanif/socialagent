@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.integrations import claude
+from app.integrations import llm
 
 IG_CAPTION_LIMIT = 2200
 MAX_HASHTAGS = 15
@@ -109,7 +109,7 @@ async def generate(
     if previous_pack and tweak:
         lines.append(f"Previous options: {json.dumps(previous_pack.get('options'), ensure_ascii=False)}")
         lines.append(f"Tweak request: {tweak}")
-    pack = await claude.parse(CaptionPack, system=SYSTEM, content="\n".join(lines), effort="medium")
+    pack = await llm.structured(CaptionPack, system=SYSTEM, text="\n".join(lines), effort="medium")
     if pack is None or not pack.options:
         return fallback_pack(transcript_text, storyboard, brand), False
     return validate_pack(pack, brand), True

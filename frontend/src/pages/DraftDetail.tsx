@@ -74,6 +74,8 @@ export default function DraftDetailPage() {
   const canPublish = d.gates.video_approved && d.gates.caption_approved && ['awaiting_publish_choice', 'awaiting_schedule_time', 'saved'].includes(st)
   const pack = d.caption_pack
   const question = d.storyboard?.question_for_user as string | undefined
+  const trace = (d.storyboard?.trace as string[] | undefined) || []
+  const editorName = (d.storyboard?.editor as string | undefined) || 'rules'
 
   return (
     <div className="space-y-5">
@@ -166,6 +168,20 @@ export default function DraftDetailPage() {
                 ))}
               </ul>
               {question && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">❓ {question}</p>}
+              {trace.length > 0 && (
+                <details className="mt-3 text-sm">
+                  <summary className="cursor-pointer font-semibold text-slate-600">
+                    Editor tool calls ({editorName === 'rules' ? 'built-in rules' : editorName}, {trace.length})
+                  </summary>
+                  <ol className="mt-2 space-y-1 font-mono text-xs text-slate-600">
+                    {trace.map((t, i) => (
+                      <li key={i} className={t.startsWith('✗') ? 'text-red-600' : ''}>
+                        {i + 1}. {t}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
             </Card>
           )}
 

@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     internal_shared_secret: str = "dev-only-internal-secret-change-me"
     admin_emails: str = ""
 
+    # LLM providers, tried in this order (only those with keys). "anthropic" uses the native Claude SDK.
+    llm_providers: str = "gemini,groq,anthropic"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_vision_model: str = "qwen/qwen3.8-27b"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_whisper_model: str = "whisper-large-v3-turbo"
+    transcribe_provider: str = "auto"  # auto (Groq if key, else local) | groq | local
+
     anthropic_api_key: str = ""
     claude_model: str = "claude-opus-5-5"
 

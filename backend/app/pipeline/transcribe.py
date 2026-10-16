@@ -72,11 +72,70 @@ def transcribe_sync(path: str) -> dict:
     return {"language": info.language, "words": words, "text": " ".join(w["text"] for w in words)}
 
 
+def _groq_enabled() -> bool:
+    if settings.transcribe_provider == "local":
+        return False
+    return bool(settings.groq_api_key)
+
+
+async def transcribe_groq(path: str) -> dict | None:
+    """Groq Whisper API with word timestamps. None on any failure (caller falls back to local Whisper)."""
+    import tempfile
+
+    import httpx
+
+    with tempfile.TemporaryDirectory() as tmp:
+        audio = f"{tmp}/audio.mp3"
+        result = await asyncio.to_thread(
+            subprocess.run,
+            ["ffmpeg", "-y", "-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", audio],
+            capture_output=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            return {"language": None, "words": [], "text": ""}  # no audio track
+        data = {
+            "model": settings.groq_whisper_model,
+            "response_format": "verbose_json",
+            "timestamp_granularities[]": ["word", "segment"],
+            "temperature": "0",
+        }
+        try:
+            with open(audio, "rb") as fh:
+                async with httpx.AsyncClient(timeout=120) as client:
+                    response = await client.post(
+                        f"{settings.groq_base_url.rstrip('/')}/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                        data=data,
+                        files={"file": ("audio.mp3", fh, "audio/mpeg")},
+                    )
+        except httpx.HTTPError as exc:
+            log.warning("groq transcription failed: %s", exc)
+            return None
+    if response.status_code >= 400:
+        log.warning("groq transcription %s: %s", response.status_code, response.text[:300])
+        return None
+    payload = response.json()
+    words = [
+        {"start": round(float(w["start"]), 3), "end": round(float(w["end"]), 3), "text": str(w["word"]).strip(), "p": 1.0}
+        for w in payload.get("words") or []
+        if str(w.get("word", "")).strip()
+    ]
+    return {"language": payload.get("language"), "words": words, "text": " ".join(w["text"] for w in words),
+            "engine": "groq"}
+
+
 async def transcribe(path: str) -> dict:
+    if _groq_enabled():
+        result = await transcribe_groq(path)
+        if result is not None:
+            return result
     return await asyncio.to_thread(transcribe_sync, path)
 
 
 def warm_up() -> None:
+    if _groq_enabled() and settings.transcribe_provider == "groq":
+        return
     try:
         _get_model()
     except Exception as exc:

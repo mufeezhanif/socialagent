@@ -144,7 +144,7 @@ async def finalize(master: Path, out_duration: float, workdir: Path) -> dict[str
     kbps = int(min(2500, max(250, PREVIEW_MAX_MB * 8192 / max(out_duration, 1) - 96)))
     await run(
         [
-            "ffmpeg", "-y", "-v", "error", "-i", str(master), "-vf", "scale=720:1280",
+            "ffmpeg", "-y", "-v", "error", "-i", str(master.resolve()), "-vf", "scale=720:1280",
             "-c:v", "libx264", "-preset", "veryfast", "-b:v", f"{kbps}k", "-maxrate", f"{int(kbps * 1.3)}k",
             "-bufsize", f"{kbps * 2}k", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", preview.name,
         ],
@@ -154,7 +154,7 @@ async def finalize(master: Path, out_duration: float, workdir: Path) -> dict[str
 
     cover = workdir / "cover.jpg"
     await run(
-        ["ffmpeg", "-y", "-v", "error", "-ss", f"{min(1.0, out_duration / 3):.2f}", "-i", str(master),
+        ["ffmpeg", "-y", "-v", "error", "-ss", f"{min(1.0, out_duration / 3):.2f}", "-i", str(master.resolve()),
          "-frames:v", "1", "-vf", "scale=540:960", "-q:v", "4", cover.name],
         timeout=60,
         cwd=str(workdir),
