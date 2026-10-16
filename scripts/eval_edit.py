@@ -95,12 +95,15 @@ async def main() -> None:
     ap.add_argument("--out", default="samples/out/eval")
     ap.add_argument("--style", default=None)
     ap.add_argument("--change", action="append", default=[])
+    ap.add_argument("--target", type=float, default=None, help="requested reel length in seconds")
+    ap.add_argument("--context", default=None, help="user's note sent with the video")
     args = ap.parse_args()
     src, out = Path(args.src), Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
     started = time.time()
-    result = await run_edit(EditInput(src=src, workdir=out / "work", style_request=args.style, change_requests=args.change))
+    result = await run_edit(EditInput(src=src, workdir=out / "work", style_request=args.style, change_requests=args.change,
+                                      target_seconds=args.target, user_context=args.context))
     edit_seconds = round(time.time() - started, 1)
 
     words = result.transcript["words"]
@@ -167,6 +170,12 @@ async def main() -> None:
             "leftover_fillers": leftover_fillers,
         },
         "trace": result.trace,
+        "kept_parts": [
+            {"source": f"{s:.1f}-{e:.1f}s",
+             "said": " ".join(w["text"] for i, w in enumerate(words) if kept_flags[i] and s <= w["start"] < e),
+             "english": " ".join(w["text"] for w in (result.transcript.get("translation") or {}).get("words", [])
+                                 if s <= w["start"] < e)}
+            for s, e in segments],
         "input_transcript": " ".join(("~~" + w["text"] + "~~") if not k else w["text"] for w, k in zip(words, kept_flags)),
         "output_transcript": " ".join(w["text"] for w in out_words),
         "files": {"master": str(result.master), "preview": str(result.preview), "compare": str(out / "compare.jpg")},

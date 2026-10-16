@@ -16,7 +16,7 @@ from app.pipeline.render_hyperframes import build_data, hyperframes_available, r
 from app.pipeline.storyboard import Storyboard, removed_word_set
 from app.pipeline.styles import StylePreset, get_preset
 from app.pipeline.subtitles import build_ass
-from app.pipeline.transcribe import transcribe
+from app.pipeline.transcribe import transcribe, translate
 
 log = logging.getLogger(__name__)
 DEFAULT_ACCENT = "#FFD400"
@@ -36,6 +36,7 @@ class EditInput:
     face_x: float | None = None
     face_checked: bool = False
     motion: bool = False  # brag-style HyperFrames motion layer (slower, opt-in)
+    target_seconds: float | None = None  # requested reel length; also parsed from the user's notes
 
 
 @dataclass
@@ -55,6 +56,15 @@ class EditOutput:
     motion: bool = False
     editor: str = "rules"
     trace: list[str] = field(default_factory=list)
+
+
+def vocabulary_hint(user_context: str | None, brand: dict) -> str | None:
+    """Names and terms the speaker is likely to say, from the user's note and brand kit (length requests removed)."""
+    from app.pipeline.editor_agent import _TARGET_RE
+
+    parts = [_TARGET_RE.sub("", user_context or "").strip(" .,-"), brand.get("niche") or ""]
+    hint = ". ".join(p for p in parts if p)
+    return hint[:400] or None
 
 
 def find_music(style: str) -> Path | None:
@@ -105,7 +115,8 @@ def make_summary(
 async def run_edit(inp: EditInput) -> EditOutput:
     inp.workdir.mkdir(parents=True, exist_ok=True)
     probe = ProbeInfo.from_dict(inp.probe) if inp.probe else await probe_file(str(inp.src))
-    transcript = inp.transcript if inp.transcript is not None else await transcribe(str(inp.src))
+    vocab = vocabulary_hint(inp.user_context, inp.brand)
+    transcript = inp.transcript if inp.transcript is not None else await transcribe(str(inp.src), vocab)
     words = transcript.get("words", [])
     face_x = inp.face_x if inp.face_checked else await face_center(str(inp.src), probe.duration)
 
@@ -121,6 +132,9 @@ async def run_edit(inp: EditInput) -> EditOutput:
         change_requests=inp.change_requests,
         previous=inp.previous_storyboard,
         motion_requested=inp.motion,
+        target_seconds=inp.target_seconds,
+        segments=transcript.get("segments"),
+        language=transcript.get("language"),
     )
     sb, from_ai = editor.storyboard, editor.from_ai
     want_motion = inp.motion or editor.motion
@@ -133,10 +147,22 @@ async def run_edit(inp: EditInput) -> EditOutput:
     accent = inp.brand.get("accent_color")
     accent = accent if accent and accent.upper() != DEFAULT_ACCENT else None
 
+    # Captions: the spoken words, or English translations (timed on the same source timeline) for other languages.
+    caption_words, caption_removed, caption_hl = words, removed, set(sb.highlight_word_indices)
+    language = transcript.get("language")
+    if sb.captions_enabled and words and language and language != "en" and settings.caption_language == "en":
+        if "translation" not in transcript:
+            transcript["translation"] = await translate(str(inp.src), vocab)
+        english = (transcript.get("translation") or {}).get("words") or []
+        if english:
+            spans = [(words[i]["start"], words[i]["end"]) for i in sb.highlight_word_indices if i < len(words)]
+            caption_words, caption_removed = english, set()  # cut parts drop out by timing
+            caption_hl = {j for j, w in enumerate(english) if any(w["start"] < e and w["end"] > s for s, e in spans)}
+
     ass_text = build_ass(
-        words=words,
+        words=caption_words,
         segments=segments,
-        removed=removed,
+        removed=caption_removed,
         preset=preset,
         out_duration=out_duration,
         captions=sb.captions_enabled,
@@ -144,7 +170,7 @@ async def run_edit(inp: EditInput) -> EditOutput:
         hook_text=sb.hook_text,
         punchline_text=sb.punchline_text,
         cta_text=sb.cta_text,
-        highlight_indices=set(sb.highlight_word_indices),
+        highlight_indices=caption_hl,
         accent=accent,
     )
     ass_file = None
@@ -167,9 +193,11 @@ async def run_edit(inp: EditInput) -> EditOutput:
     if want_motion and hyperframes_available():
         try:
             base = await render(inp.src, probe, replace(plan, ass_file=None), inp.workdir, fonts, out_name="base.mp4")
+            motion_sb = {**sb.model_dump(), "highlight_word_indices": sorted(caption_hl), "emoji_moments": []
+                         if caption_words is not words else sb.model_dump()["emoji_moments"]}
             data = build_data(
-                words=words, segments=segments, removed=removed, preset=preset,
-                out_duration=out_duration, storyboard=sb.model_dump(), accent=accent,
+                words=caption_words, segments=segments, removed=caption_removed, preset=preset,
+                out_duration=out_duration, storyboard=motion_sb, accent=accent,
             )
             master = await render_motion(base, data, inp.workdir)
             used_motion = True
@@ -182,6 +210,8 @@ async def run_edit(inp: EditInput) -> EditOutput:
     summary = make_summary(
         probe.duration, out_duration, sb, reframe, preset, probe.has_audio, bool(sb.captions_enabled and words), music is not None
     )
+    if caption_words is not words:
+        summary.insert(-1, f"English captions (translated from {language})")
     if used_motion:
         summary.insert(-1, "Motion graphics: kinetic captions, zoom punches, emoji pops, end card")
     elif want_motion:

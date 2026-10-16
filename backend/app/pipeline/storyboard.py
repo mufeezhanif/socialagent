@@ -44,7 +44,8 @@ def _clip_words(text: str, max_words: int, max_chars: int) -> str:
     return " ".join(words[:max_words])[:max_chars].strip()
 
 
-def validate_storyboard(sb: Storyboard, n_words: int, duration: float) -> Storyboard:
+def validate_storyboard(sb: Storyboard, n_words: int, duration: float, max_cut: float = 0.6) -> Storyboard:
+    """max_cut: largest share of the spoken words that may be removed (raised only for an explicit target length)."""
     data = sb.model_dump()
     if data["style"] not in PRESETS:
         data["style"] = "clean"
@@ -62,7 +63,7 @@ def validate_storyboard(sb: Storyboard, n_words: int, duration: float) -> Storyb
         removed_count += end - start + 1
         ranges.append({"start_word": start, "end_word": end, "reason": r["reason"][:80]})
     # Never let the director delete most of the speech.
-    if n_words and removed_count > n_words * 0.6:
+    if n_words and removed_count > n_words * max_cut:
         ranges = []
     data["remove_ranges"] = ranges
 

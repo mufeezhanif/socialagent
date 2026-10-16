@@ -6,6 +6,7 @@ is deterministic (FFmpeg / HyperFrames). Without any LLM, rule-based editing han
 """
 
 import json
+from collections import Counter
 import logging
 import re
 from dataclasses import dataclass
@@ -109,7 +110,7 @@ def _words_text(words: list[dict], a: int, b: int, limit: int = 80) -> str:
 
 
 def initial_state(previous: dict | None, style: str, n_words: int, *, locked: bool, motion_allowed: bool,
-                  motion_on: bool) -> dict:
+                  motion_on: bool, max_cut: float = 0.6) -> dict:
     state = fallback_storyboard(style, n_words).model_dump()
     if previous:
         state.update({k: v for k, v in previous.items() if k in state})
@@ -117,13 +118,106 @@ def initial_state(previous: dict | None, style: str, n_words: int, *, locked: bo
         state["emoji_moments"] = list(previous.get("emoji_moments") or [])
     if locked:
         state["style"] = style
-    state.update({"_style_locked": locked, "_motion_allowed": motion_allowed, "_motion": motion_on})
+    state.update({"_style_locked": locked, "_motion_allowed": motion_allowed, "_motion": motion_on,
+                  "_max_cut": max_cut})
     return state
 
 
 def to_storyboard(state: dict, n_words: int, duration: float) -> Storyboard:
     data = {k: v for k, v in state.items() if not k.startswith("_")}
-    return validate_storyboard(Storyboard.model_validate(data), n_words, duration)
+    return validate_storyboard(Storyboard.model_validate(data), n_words, duration, state.get("_max_cut", 0.6))
+
+
+_TARGET_RE = re.compile(
+    r"(?:make it|keep it|cut it(?: down)? to|trim it to|shorten(?: it)? to|reduce(?: it)? to|under|at most|max(?:imum)?"
+    r"|around|about|only|limit(?: it)? to|length(?: of)?|duration(?: of)?|in)\s*(?:a\s*)?(\d{1,3})\s*-?\s*"
+    r"(?:s|sec|secs|second|seconds)\b"
+    r"|\b(\d{1,3})\s*-?\s*(?:s|sec|secs|second|seconds)\s*(?:reel|video|clip|long|version|max|edit|cut)\b",
+    re.IGNORECASE,
+)
+
+
+def parse_target(texts: list[str]) -> float | None:
+    """'make it 40 sec', '30 second reel', 'under 60s' -> seconds. The last request wins."""
+    target = None
+    for text in texts:
+        for m in _TARGET_RE.finditer(text or ""):
+            value = int(m.group(1) or m.group(2))
+            if 5 <= value <= 180:
+                target = float(value)
+    return target
+
+
+def output_seconds(state: dict, words: list[dict], duration: float) -> float:
+    sb = to_storyboard(state, len(words), duration)
+    segments = keep_segments(words, duration, removed_word_set(sb), trim_start=sb.trim_start_s, trim_end=sb.trim_end_s)
+    return output_duration(segments)
+
+
+def units_for(words: list[dict], segments: list[dict] | None) -> list[dict]:
+    """Editing units: Whisper segments (with quality scores) or, without them, punctuation sentences."""
+    if segments:
+        return [s for s in segments if 0 <= s["first_word"] <= s["last_word"] < len(words)]
+    return [{"first_word": a, "last_word": b, "avg_logprob": 0.0, "compression_ratio": 1.0, "no_speech_prob": 0.0}
+            for a, b in sentences(words)]
+
+
+def unclear(unit: dict) -> bool:
+    """Whisper's standard signals for hallucinated or unintelligible audio."""
+    return unit.get("compression_ratio", 1) > 2.4 or (unit.get("avg_logprob", 0) < -1.0 and unit.get("no_speech_prob", 0) > 0.5)
+
+
+def _unit_text(words: list[dict], u: dict) -> str:
+    return " ".join(normalize_word(w["text"]) for w in words[u["first_word"] : u["last_word"] + 1])
+
+
+def _unit_seconds(words: list[dict], u: dict) -> float:
+    return words[u["last_word"]]["end"] - words[u["first_word"]]["start"]
+
+
+def fit_to_target(state: dict, words: list[dict], units: list[dict], duration: float, target: float) -> list[str]:
+    """Bring the edit to about `target` seconds. The opening (context/hook) and the closing are protected; the middle
+    is trimmed, starting with repeated looped text (a Whisper hallucination sign), then the least clearly heard parts."""
+    trace: list[str] = []
+    out = output_seconds(state, words, duration)
+    if out <= target + 2:
+        return trace
+    state["_max_cut"] = max(state.get("_max_cut", 0.6), 0.85)
+
+    def live(u: dict) -> bool:
+        removed = removed_word_set(to_storyboard(state, len(words), duration))
+        return any(i not in removed for i in range(u["first_word"], u["last_word"] + 1))
+
+    candidates = [u for u in units if live(u)]
+    protected: set[int] = set()
+    for budget, ordered in ((target * 0.4, candidates), (target * 0.25, list(reversed(candidates)))):
+        used = 0.0
+        for u in ordered:
+            seconds = _unit_seconds(words, u)
+            if used and used + seconds > budget:
+                break
+            protected.add(id(u))
+            used += seconds
+    repeats = Counter(_unit_text(words, u) for u in candidates)
+
+    def priority(u: dict) -> tuple:
+        looped = repeats[_unit_text(words, u)] > 1
+        return (0 if looped else 1 if unclear(u) else 2, u.get("avg_logprob", 0))
+
+    middle = sorted((u for u in candidates if id(u) not in protected), key=priority)
+    for unit in middle:
+        if out <= target + 2:
+            break
+        args = {"start_word": unit["first_word"], "end_word": unit["last_word"], "reason": f"shortened to {target:.0f}s"}
+        result = apply_tool(state, "remove_words", args, words, duration)
+        after = output_seconds(state, words, duration) if result.startswith("ok") else out
+        if result.startswith("ok") and after < target - 6 and out - target < 8:
+            state["remove_ranges"].pop()  # this cut would undershoot by a lot; skip it
+            continue
+        trace.append(_trace_line("remove_words", args, result))
+        out = after
+    trace.append(f"length check: {out:.1f}s for a {target:.0f}s target")
+    return trace
 
 
 def apply_tool(state: dict, name: str, args: dict, words: list[dict], duration: float) -> str:
@@ -149,7 +243,7 @@ def _apply_tool(state: dict, name: str, args: dict, words: list[dict], duration:
     if name == "remove_words":
         a, b = sorted((idx(args["start_word"]), idx(args["end_word"])))
         already = len(removed_word_set(to_storyboard(state, n, duration)))
-        if already + (b - a + 1) > n * 0.6:
+        if already + (b - a + 1) > n * state.get("_max_cut", 0.6):
             return "error: that would delete most of the video. Cut smaller, specific ranges."
         reason = str(args.get("reason") or "cut")[:80]
         state["remove_ranges"].append({"start_word": a, "end_word": b, "reason": reason})
@@ -266,9 +360,16 @@ def sentences(words: list[dict]) -> list[tuple[int, int]]:
     return spans
 
 
-def auto_rules(state: dict, words: list[dict], duration: float) -> list[str]:
-    """No-LLM editing pass: drop restart sentences ("sorry, let me start again") like an editor would."""
+def auto_rules(state: dict, words: list[dict], duration: float, units: list[dict] | None = None) -> list[str]:
+    """No-LLM editing pass: drop unclear/hallucinated audio and restart sentences, like an editor would."""
     trace: list[str] = []
+    repeats = Counter(_unit_text(words, u) for u in units or [])
+    for unit in units or []:
+        looped = repeats[_unit_text(words, unit)] >= 3 and len(_unit_text(words, unit).split()) <= 6
+        if unclear(unit) or looped:
+            reason = "unclear audio" if unclear(unit) else "repeated loop"
+            args = {"start_word": unit["first_word"], "end_word": unit["last_word"], "reason": reason}
+            trace.append(_trace_line("remove_words", args, apply_tool(state, "remove_words", args, words, duration)))
     spans = sentences(words)
 
     def tokens(span: tuple[int, int]) -> set[str]:
@@ -355,18 +456,23 @@ def apply_rules(state: dict, notes: list[str], words: list[dict], duration: floa
 
 
 def _prompt(*, words, probe, face_x, brand, user_context, style_request, motion_allowed, change_requests,
-            previous) -> str:
+            previous, target=None, language=None) -> str:
     duration = float(probe["duration"])
     orientation = "landscape" if probe["width"] > probe["height"] else "vertical"
     face = f"one steady face at x={face_x:.2f} (0=left, 1=right)" if face_x is not None else "no single steady face"
     lines = [
         f"Clip: {duration:.1f} s, {probe['width']}x{probe['height']} {orientation}, audio: {'yes' if probe['has_audio'] else 'no'}.",
+        f"Speech language: {language or 'unknown'}. Captions are shown in English; write the hook and end card in English.",
         f"Face detection: {face}.",
         f"Brand kit: {json.dumps(brand, ensure_ascii=False)}",
         f"User's notes about this video: {user_context or '(none)'}",
         f"Style: {'the user asked for ' + style_request if style_request else 'your choice'}.",
         f"Motion graphics: {'allowed (the user asked for it)' if motion_allowed else 'not requested'}.",
     ]
+    if target:
+        lines.append(f"Target length: about {target:.0f} s (the user asked). Keep the strongest moments: the opening "
+                     f"context, the main point and the closing. Remove the weakest parts with remove_words and use "
+                     f"preview_edit until duration_out is within {target - 3:.0f}-{target + 2:.0f} s.")
     if previous:
         keep = {k: previous.get(k) for k in ("style", "hook_text", "punchline_text", "cta_text", "remove_ranges",
                                             "highlight_word_indices", "emoji_moments", "crop_mode", "captions_enabled",
@@ -438,24 +544,36 @@ async def run_editor(
     change_requests: list[str],
     previous: dict | None,
     motion_requested: bool,
+    target_seconds: float | None = None,
+    segments: list[dict] | None = None,
+    language: str | None = None,
 ) -> EditorResult:
     duration = float(probe["duration"])
     style = style_request or (previous or {}).get("style") or brand.get("default_style") or "clean"
     motion_allowed = motion_requested or any(MOTION_RE.search(n) for n in change_requests)
     motion_on = motion_requested or bool((previous or {}).get("motion"))
+    target = target_seconds or parse_target([user_context or "", *change_requests])
+    if target and target >= duration - 1:
+        target = None  # already short enough
+    units = units_for(words, segments)
 
-    def fresh() -> dict:
-        return initial_state(previous, style, len(words), locked=bool(style_request), motion_allowed=motion_allowed,
-                             motion_on=motion_on)
+    def fresh(base: dict | None = None) -> dict:
+        return initial_state(base if base is not None else previous, style, len(words), locked=bool(style_request),
+                             motion_allowed=motion_allowed, motion_on=motion_on, max_cut=0.85 if target else 0.6)
+
+    def finish(state: dict, from_ai: bool, editor: str, trace: list[str]) -> EditorResult:
+        if target:  # safety net: whoever edited, the result honours the requested length
+            trace = trace + fit_to_target(state, words, units, duration, target)
+        return EditorResult(to_storyboard(state, len(words), duration), from_ai, editor, trace, state["_motion"])
 
     prompt = _prompt(words=words, probe=probe, face_x=face_x, brand=brand, user_context=user_context,
                      style_request=style_request, motion_allowed=motion_allowed, change_requests=change_requests,
-                     previous=previous)
+                     previous=previous, target=target, language=language)
     for provider in llm.providers():
         state = fresh()
         try:
             trace = await _agent(provider, state, frames, prompt, words, duration)
-            return EditorResult(to_storyboard(state, len(words), duration), True, provider.name, trace, state["_motion"])
+            return finish(state, True, provider.name, trace)
         except (llm.LLMError, ValidationError, ValueError) as exc:
             log.warning("editor agent via %s failed: %s", provider.name, str(exc)[:300])
 
@@ -466,9 +584,9 @@ async def run_editor(
                                    user_context=user_context, brand=brand, change_requests=change_requests,
                                    previous=previous)
         if from_ai:
-            return EditorResult(sb, True, "claude", ["storyboard planned in one structured call"], motion_on)
+            return finish(fresh(sb.model_dump()), True, "claude", ["storyboard planned in one structured call"])
 
     state = fresh()
-    trace = [] if previous else auto_rules(state, words, duration)
+    trace = [] if previous else auto_rules(state, words, duration, units)
     trace += apply_rules(state, change_requests[-1:] if previous else change_requests, words, duration)
-    return EditorResult(to_storyboard(state, len(words), duration), False, "rules", trace, state["_motion"])
+    return finish(state, False, "rules", trace)

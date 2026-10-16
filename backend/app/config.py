@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     groq_vision_model: str = "qwen/qwen3.8-27b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_whisper_model: str = "whisper-large-v3-turbo"
+    groq_translate_model: str = "whisper-large-v3"  # turbo can't translate
+    caption_language: str = "en"  # "en": English captions (translated) for non-English speech; "source": keep speech language
     transcribe_provider: str = "auto"  # auto (Groq if key, else local) | groq | local
 
     anthropic_api_key: str = ""
