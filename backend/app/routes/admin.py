@@ -54,6 +54,25 @@ async def wa_pause(body: PauseBody):
         raise HTTPException(502, str(exc))
 
 
+@router.get("/config")
+async def config_check():
+    """What the server is configured with (no secrets), so the team can fix setup quickly."""
+    from app.config import settings
+    from app.integrations import instagram_api, llm
+    from app.pipeline.render_hyperframes import hyperframes_available
+
+    return {
+        "app_base_url": settings.app_base_url,
+        "instagram_configured": instagram_api.configured(),
+        "instagram_redirect_uri": settings.instagram_redirect_uri,
+        "instagram_graph_version": settings.ig_graph_version,
+        "publish_dry_run": settings.publish_dry_run,
+        "llm_providers": llm.names(),
+        "transcription": "groq" if settings.groq_api_key and settings.transcribe_provider != "local" else "local",
+        "motion_graphics": hyperframes_available(),
+    }
+
+
 @router.get("/stats")
 async def stats(session: AsyncSession = Depends(get_session)):
     users = await session.scalar(select(func.count(User.id)))

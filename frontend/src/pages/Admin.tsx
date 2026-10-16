@@ -16,6 +16,26 @@ interface WaStatus {
   error?: string
 }
 
+interface ServerConfig {
+  app_base_url: string
+  instagram_configured: boolean
+  instagram_redirect_uri: string
+  instagram_graph_version: string
+  publish_dry_run: boolean
+  llm_providers: string[]
+  transcription: string
+  motion_graphics: boolean
+}
+
+function Row({ label, value, ok }: { label: string; value: React.ReactNode; ok?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2 text-sm last:border-0">
+      <span className="text-slate-500">{label}</span>
+      <span className={`font-medium ${ok === false ? 'text-red-600' : ok ? 'text-emerald-700' : ''}`}>{value}</span>
+    </div>
+  )
+}
+
 interface Stats {
   users: number
   drafts: Record<string, number>
@@ -26,6 +46,7 @@ export default function Admin() {
   const qc = useQueryClient()
   const status = useQuery({ queryKey: ['wa-status'], queryFn: () => api<WaStatus>('/api/admin/wa/status'), refetchInterval: 3000 })
   const stats = useQuery({ queryKey: ['stats'], queryFn: () => api<Stats>('/api/admin/stats'), refetchInterval: 10000 })
+  const config = useQuery({ queryKey: ['admin-config'], queryFn: () => api<ServerConfig>('/api/admin/config') })
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -47,6 +68,31 @@ export default function Admin() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-2xl font-bold">Admin</h1>
+      {config.data && (
+        <Card>
+          <h2 className="font-bold">Server setup</h2>
+          <div className="mt-2">
+            <Row label="Public URL" value={config.data.app_base_url} />
+            <Row label="Instagram app" value={config.data.instagram_configured ? 'configured' : 'missing IG_APP_ID / IG_APP_SECRET'} ok={config.data.instagram_configured} />
+            <Row
+              label="Instagram redirect URI (add in Meta)"
+              value={
+                <button
+                  className="font-mono text-xs text-brand-700 underline"
+                  onClick={() => navigator.clipboard.writeText(config.data!.instagram_redirect_uri).then(() => toast.success('Copied'))}
+                >
+                  {config.data.instagram_redirect_uri}
+                </button>
+              }
+            />
+            <Row label="Graph API version" value={config.data.instagram_graph_version} />
+            <Row label="Publishing" value={config.data.publish_dry_run ? 'dry run (not posting)' : 'live'} ok={!config.data.publish_dry_run} />
+            <Row label="AI providers" value={config.data.llm_providers.join(' → ') || 'none (built-in rules)'} ok={config.data.llm_providers.length > 0} />
+            <Row label="Transcription" value={config.data.transcription} />
+            <Row label="Motion graphics" value={config.data.motion_graphics ? 'available' : 'off'} />
+          </div>
+        </Card>
+      )}
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-bold">WhatsApp bot</h2>

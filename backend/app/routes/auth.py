@@ -10,6 +10,7 @@ from app.config import settings
 from app.db import get_session
 from app.deps import current_user, is_admin
 from app.models import BrandProfile, InstagramAccount, User, WhatsAppLink, utcnow
+from app.integrations import instagram_api
 from app.pipeline.render_hyperframes import hyperframes_available
 from app.security import SESSION_COOKIE, SESSION_TTL_S, create_session_token, hash_password, verify_password
 
@@ -70,7 +71,8 @@ async def me_payload(session: AsyncSession, user: User) -> dict:
             if wa
             else None
         ),
-        "instagram_configured": bool(settings.ig_app_id) or settings.publish_dry_run,
+        "instagram_configured": instagram_api.configured(),
+        "publish_dry_run": settings.publish_dry_run,
         "features": {"motion": hyperframes_available()},
     }
 

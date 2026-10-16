@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     ig_app_id: str = ""
     ig_app_secret: str = ""
     ig_redirect_uri: str = ""
-    ig_graph_version: str = ""  # empty = unversioned (app default)
+    ig_graph_version: str = "v25.0"
     publish_dry_run: bool = False  # dev only: pretend to publish when Instagram isn't configured
 
     gateway_url: str = "http://127.0.0.1:3001"

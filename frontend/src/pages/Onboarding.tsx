@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { QRCodeSVG } from 'qrcode.react'
 import { Camera as Instagram, CheckCircle2, MessageCircle, Palette } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type Me } from '../api'
+import { api, type InstagramStatus, type Me } from '../api'
 import { Button, Card, Input, Logo } from '../ui'
 import { BrandForm } from './Brand'
 
@@ -78,6 +78,19 @@ export default function Onboarding() {
     }
   }
 
+  const [igStatus, setIgStatus] = useState<InstagramStatus | null>(null)
+  const [checking, setChecking] = useState(false)
+  const checkInstagram = async () => {
+    setChecking(true)
+    try {
+      setIgStatus(await api<InstagramStatus>('/api/instagram/status'))
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setChecking(false)
+    }
+  }
+
   const startLink = async () => {
     setBusy(true)
     try {
@@ -102,12 +115,29 @@ export default function Onboarding() {
 
         <Step n={1} title="Connect Instagram" done={igDone} icon={Instagram}>
           {igDone ? (
-            <div className="flex items-center gap-3">
-              {data?.instagram?.profile_picture_url && <img src={data.instagram.profile_picture_url} className="h-10 w-10 rounded-full" alt="" />}
-              <div>
-                <div className="font-semibold">@{data?.instagram?.username}</div>
-                <div className="text-xs text-slate-500">{data?.instagram?.account_type?.replace('_', ' ').toLowerCase()} account</div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                {data?.instagram?.profile_picture_url && <img src={data.instagram.profile_picture_url} className="h-10 w-10 rounded-full" alt="" />}
+                <div>
+                  <div className="font-semibold">@{data?.instagram?.username}</div>
+                  <div className="text-xs text-slate-500">{data?.instagram?.account_type?.replace('_', ' ').toLowerCase()} account</div>
+                </div>
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="secondary" onClick={checkInstagram} loading={checking}>
+                  Check connection
+                </Button>
+                <Button variant="ghost" onClick={connectInstagram} disabled={!data?.instagram_configured}>
+                  Reconnect
+                </Button>
+              </div>
+              {igStatus && (
+                <p className={`rounded-xl p-3 text-sm ${igStatus.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+                  {igStatus.ok
+                    ? `Working. ${igStatus.quota_usage ?? 0} of ${igStatus.quota_total ?? 100} posts used in the last 24 h.`
+                    : `Problem: ${igStatus.error}. Try Reconnect.`}
+                </p>
+              )}
             </div>
           ) : (
             <div className="space-y-2">
@@ -115,7 +145,12 @@ export default function Onboarding() {
               <Button variant="ig" onClick={connectInstagram} loading={busy} disabled={!data?.instagram_configured}>
                 <Instagram className="h-4 w-4" /> Connect Instagram
               </Button>
-              {!data?.instagram_configured && <p className="text-xs text-amber-700">The Instagram app isn't configured on the server yet.</p>}
+              {!data?.instagram_configured && (
+                <p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">
+                  Instagram isn't set up on this server yet. An admin needs to add the Meta app's Instagram App ID and
+                  secret (IG_APP_ID / IG_APP_SECRET). Details on the Admin page.
+                </p>
+              )}
             </div>
           )}
         </Step>
