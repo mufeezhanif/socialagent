@@ -457,6 +457,26 @@ def auto_rules(state: dict, words: list[dict], duration: float, units: list[dict
     return trace
 
 
+GREETING_RE = re.compile(r"^(hi|hey|hello|hello everyone|assalam|salam|what'?s up|welcome|so|okay|ok)\b", re.I)
+
+
+def auto_text(state: dict, words: list[dict], brand: dict, english: bool = True) -> list[str]:
+    """No-LLM hook and end card, so the video type's title and end-card graphics still show: the first short kept
+    sentence that is not a greeting becomes the hook (English speech only: on-screen text is English), the brand's call
+    to action becomes the end card."""
+    removed = {i for r in state["remove_ranges"] for i in range(r["start_word"], r["end_word"] + 1)}
+    args: dict = {}
+    for a, b in sentences(words)[:4] if english else []:
+        text = " ".join(w["text"] for w in words[a : b + 1]).strip(" .,!?")
+        short = 2 <= b - a + 1 <= 6 and len(text) <= 40
+        if short and not removed & set(range(a, b + 1)) and not GREETING_RE.match(text):
+            args["hook"] = text
+            break
+    if brand.get("cta"):
+        args["punchline"] = brand["cta"]
+    return [_trace_line("set_text", args, apply_tool(state, "set_text", args, words, 0))] if args else []
+
+
 def find_phrase(words: list[dict], phrase: str) -> tuple[int, int] | None:
     tokens = [normalize_word(t) for t in phrase.split() if normalize_word(t)]
     norm = [normalize_word(w["text"]) for w in words]
@@ -696,7 +716,8 @@ async def run_editor(
             return finish(fresh(sb.model_dump()), True, "claude", ["storyboard planned in one structured call"])
 
     state = fresh()
-    trace = [] if previous else auto_rules(state, words, duration, units)
+    trace = [] if previous else auto_rules(state, words, duration, units) + auto_text(
+        state, words, brand, english=(language or "en").startswith("en"))
     if not previous:
         trace.append(f"video type: {guess} (keywords)")
     trace += apply_rules(state, change_requests[-1:] if previous else change_requests, words, duration)

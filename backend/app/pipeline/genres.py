@@ -164,7 +164,7 @@ def plan_sfx(recipe: Recipe, *, cuts: list[float], highlights: list[float], emoj
     if recipe.name == "energetic":
         if hook:
             events.append((0.0, "impact", 0.5))
-        events += [(t - 0.25, "whoosh", 0.35) for t in cuts]
+        events += [(t - 0.25, "whoosh", 0.35) for t in _spaced(cuts, 1.5, 10)]  # one per cut, not a wall of noise
         if punch_start is not None and punch_start > 3:
             events += [(punch_start - 1.4, "riser", 0.3), (punch_start, "impact", 0.45)]
     elif recipe.name == "funny":

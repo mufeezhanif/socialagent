@@ -1,7 +1,7 @@
 import httpx
 
 from app.integrations.llm import rate_limit_wait
-from app.pipeline.editor_agent import apply_rules, apply_tool, drop_orphans, initial_state, transcript_lines
+from app.pipeline.editor_agent import apply_rules, apply_tool, auto_text, drop_orphans, initial_state, transcript_lines
 from app.pipeline.genres import RECIPES, classify, cut_points, get_recipe, plan_sfx, type_from_request
 from app.pipeline.probe import ProbeInfo
 from app.pipeline.render_ffmpeg import RenderPlan, build_filtergraph
@@ -133,3 +133,11 @@ def test_rate_limit_wait_parses_groq_messages():
     assert rate_limit_wait(resp("Please try again in 450ms")) == 0.45
     assert rate_limit_wait(resp("slow down", {"retry-after": "3"})) == 3.0
     assert rate_limit_wait(resp("slow down")) is None
+
+
+def test_rules_fallback_writes_a_hook_and_end_card():
+    s = state(len(WORDS) + 2)
+    auto_text(s, [w("Hi", 0.0, 0.2), w("guys.", 0.3, 0.5)] + WORDS, {"cta": "Follow for daily tips"})  # greeting skipped
+    assert s["hook_text"] == "Three tips for better reels" and s["punchline_text"] == "Follow for daily tips"
+    urdu = state(len(WORDS))
+    assert auto_text(urdu, WORDS, {}, english=False) == [] and urdu["hook_text"] in ("", None)

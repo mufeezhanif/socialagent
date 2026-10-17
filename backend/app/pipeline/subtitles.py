@@ -199,9 +199,11 @@ def build_ass(
         events += _card(2.9, min(6.4, punch_start - 0.3), "@" + handle, 360, int(fs * 0.55), hl_tag)
 
     if recipe and recipe.flash_cuts:
-        for t in flash_times or []:
-            if 0.3 < t < punch_start - 0.3:
+        last = -9.0
+        for t in sorted(flash_times or []):
+            if 0.3 < t < punch_start - 0.3 and t - last >= 1.5:  # no strobing on rapid cuts
                 events.append(_overlay(t, t + 0.16, "&HFFFFFF&", 0x78, 0xFF, 160))
+                last = t
 
     if captions and words:
         mapped = map_words(words, segments, removed)
