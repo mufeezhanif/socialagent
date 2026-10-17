@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db import SessionLocal
 from app.models import Draft, DraftStatus as S, utcnow
@@ -17,8 +17,15 @@ async def tick() -> int:
                 select(Draft).where(Draft.status == S.SCHEDULED, Draft.publish_at <= utcnow()).limit(20)
             )
         ).all()
+        queued = 0
         for draft in due:
-            draft.status = S.PUBLISHING
+            # conditional: a concurrent "post now" / unschedule may have moved it since the select
+            claimed = await session.execute(
+                update(Draft).where(Draft.id == draft.id, Draft.status == S.SCHEDULED).values(status=S.PUBLISHING)
+            )
+            if claimed.rowcount != 1:
+                continue
+            queued += 1
             await enqueue(
                 session,
                 "publish",
@@ -26,7 +33,7 @@ async def tick() -> int:
                 dedupe_key=f"publish:{draft.id}:{int(draft.publish_at.timestamp())}",
             )
         await session.commit()
-        return len(due)
+        return queued
 
 
 async def refresh_instagram_tokens() -> None:

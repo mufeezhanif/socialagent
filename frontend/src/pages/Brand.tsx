@@ -64,10 +64,10 @@ export function BrandForm({ compact = false, onSaved }: { compact?: boolean; onS
               key={s}
               type="button"
               onClick={() => set('default_style', s)}
-              className={`rounded-xl border px-3 py-2 text-left text-sm transition ${form.default_style === s ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+              className={`rounded-xl border px-3 py-2 text-left text-sm transition ${form.default_style === s ? 'border-brand-500 bg-brand-50 ring-4 ring-brand-500/15' : 'border-line bg-surface hover:border-brand-200 hover:bg-surface-2'}`}
             >
               <div className="font-semibold capitalize">{s}</div>
-              <div className="text-xs text-slate-500">{STYLE_HINTS[s]}</div>
+              <div className="text-xs text-ink-faint">{STYLE_HINTS[s]}</div>
             </button>
           ))}
         </div>
@@ -78,7 +78,7 @@ export function BrandForm({ compact = false, onSaved }: { compact?: boolean; onS
             <select
               value={form.emoji_level}
               onChange={(e) => set('emoji_level', e.target.value as Brand['emoji_level'])}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"
+              className="w-full rounded-xl border border-line bg-surface-2/50 px-3.5 py-2.5 text-sm text-ink outline-none transition hover:border-brand-200 focus:border-brand-500 focus:bg-surface focus:ring-4 focus:ring-brand-500/15"
             >
               <option value="none">None</option>
               <option value="some">Some</option>
@@ -87,7 +87,7 @@ export function BrandForm({ compact = false, onSaved }: { compact?: boolean; onS
           </Field>
           <Field label="Caption highlight colour">
             <div className="flex items-center gap-2">
-              <input type="color" value={form.accent_color} onChange={(e) => set('accent_color', e.target.value)} className="h-10 w-14 rounded-lg border border-slate-200" />
+              <input type="color" value={form.accent_color} onChange={(e) => set('accent_color', e.target.value)} className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-line bg-surface p-1" />
               <Input value={form.accent_color} onChange={(e) => set('accent_color', e.target.value)} />
             </div>
           </Field>
@@ -124,8 +124,8 @@ export default function BrandPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Brand kit</h1>
-        <p className="text-sm text-slate-500">The AI editor and caption writer follow these on every video.</p>
+        <h1 className="font-display text-4xl font-semibold tracking-tight">Brand kit</h1>
+        <p className="text-sm text-ink-soft">The AI editor and caption writer follow these on every video.</p>
       </div>
       <Card>
         <BrandForm />

@@ -2,6 +2,7 @@
  * WhatsApp gateway (Baileys). Owns no business logic: it forwards allowed inbound messages to FastAPI and sends
  * what FastAPI asks it to. Listens on 127.0.0.1 only; every request needs the shared secret.
  */
+import { timingSafeEqual } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -212,8 +213,13 @@ async function connect() {
 
 const app = express()
 app.use(express.json({ limit: '1mb' }))
+const secretBuf = Buffer.from(config.secret)
+const secretOk = (given: string | undefined) => {
+  const buf = Buffer.from(given ?? '')
+  return buf.length === secretBuf.length && timingSafeEqual(buf, secretBuf)
+}
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.get('x-internal-secret') !== config.secret) {
+  if (!secretOk(req.get('x-internal-secret'))) {
     res.status(403).json({ error: 'forbidden' })
     return
   }

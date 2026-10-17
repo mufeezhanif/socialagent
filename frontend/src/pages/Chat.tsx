@@ -10,11 +10,11 @@ function Bubble({ m }: { m: ChatMessage }) {
   const mine = m.direction === 'in'
   return (
     <div className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm shadow-sm sm:max-w-[70%] ${mine ? 'rounded-tr-sm bg-[#d9fdd3]' : 'rounded-tl-sm bg-white'}`}>
-        {m.video_url && <video src={m.video_url} controls playsInline className="mb-1.5 max-h-96 rounded-lg bg-black" />}
+      <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm break-words text-ink shadow-xs sm:max-w-[70%] ${mine ? 'rounded-tr-sm bg-bubble' : 'rounded-tl-sm bg-surface'}`}>
+        {m.video_url && <video src={m.video_url} controls playsInline className="mb-1.5 max-h-96 w-full rounded-lg bg-black" />}
         {m.text && <p className="whitespace-pre-wrap">{m.text.replace(/\*(.+?)\*/g, '$1')}</p>}
-        <div className="mt-1 flex items-center justify-end gap-2 text-[10px] text-slate-400">
-          {m.channel === 'whatsapp' && <span className="font-semibold text-wa-dark">WhatsApp</span>}
+        <div className="mt-1 flex items-center justify-end gap-2 text-[10px] text-ink-faint">
+          {m.channel === 'whatsapp' && <span className="font-semibold text-wa-dark dark:text-wa">WhatsApp</span>}
           {m.draft_id && !mine && (
             <Link to={`/app/drafts/${m.draft_id}`} className="font-semibold text-brand-600">
               open draft
@@ -76,10 +76,10 @@ export default function Chat() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-7.5rem)] max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+    <div className="mx-auto flex h-[calc(100dvh-10rem)] max-w-3xl flex-col overflow-hidden rounded-2xl border border-line shadow-md md:h-[calc(100dvh-7.5rem)]">
       <div className="flex items-center gap-3 bg-wa-dark px-4 py-3 text-white">
-        <div className="grid h-9 w-9 place-items-center rounded-full bg-white/20">🎬</div>
-        <div>
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/20">🎬</div>
+        <div className="min-w-0">
           <div className="font-semibold">Your AI video editor</div>
           <div className="text-xs text-white/80">Same assistant as on WhatsApp. Send a video to start.</div>
         </div>
@@ -87,14 +87,14 @@ export default function Chat() {
       <div className="chat-bg flex-1 space-y-2 overflow-y-auto p-4">
         {messages.isLoading && <Spinner />}
         {messages.data?.length === 0 && (
-          <div className="mx-auto mt-10 max-w-sm rounded-xl bg-white/90 p-4 text-center text-sm text-slate-600 shadow-sm">
+          <div className="mx-auto mt-10 max-w-sm rounded-xl bg-surface/90 p-4 text-center text-sm text-ink-soft shadow-sm">
             Attach a video with the 📎 button. Add a note first (for example "promo for our weekend sale") and it will be used for the caption.
           </div>
         )}
         {messages.data?.map((m) => <Bubble key={m.id} m={m} />)}
         <div ref={bottomRef} />
       </div>
-      <form onSubmit={send} className="flex items-center gap-2 border-t border-slate-200 bg-white p-3">
+      <form onSubmit={send} className="flex items-center gap-2 border-t border-line bg-surface p-3">
         <input ref={fileRef} type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()} loading={uploading} title="Attach video">
           {!uploading && <Paperclip className="h-5 w-5" />}
@@ -103,7 +103,7 @@ export default function Chat() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type a reply, e.g. 1 or 'make it cinematic'"
-          className="flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm outline-none focus:border-wa"
+          className="min-w-0 flex-1 rounded-full border border-line bg-surface-2/60 px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-faint focus:border-wa focus:bg-surface focus:ring-4 focus:ring-wa/15"
         />
         <Button type="submit" variant="wa" className="rounded-full px-3" disabled={!text.trim()}>
           <Send className="h-4 w-4" />

@@ -1,16 +1,22 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Logo } from '../ui'
+import { ThemeToggle } from '../theme'
 
 function Page({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-white px-4 py-8">
-      <div className="mx-auto max-w-2xl space-y-4 text-sm leading-relaxed text-slate-700">
-        <Link to="/">
-          <Logo />
-        </Link>
-        <h1 className="pt-4 text-2xl font-bold text-slate-900">{title}</h1>
-        {children}
+    <div className="min-h-screen px-4 py-8">
+      <div className="mx-auto max-w-2xl">
+        <div className="flex items-center justify-between gap-3">
+          <Link to="/" className="rounded-full">
+            <Logo />
+          </Link>
+          <ThemeToggle />
+        </div>
+        <div className="mt-8 space-y-4 rounded-2xl border border-line bg-surface p-6 text-sm leading-relaxed text-ink-soft shadow-sm sm:p-8">
+          <h1 className="font-display text-4xl font-semibold tracking-tight text-ink">{title}</h1>
+          {children}
+        </div>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api, type Me } from '../api'
 import { Button, Card, Field, Input, Logo } from '../ui'
+import { ThemeToggle } from '../theme'
 
 function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   const [email, setEmail] = useState('')
@@ -32,14 +33,15 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-gradient-to-b from-brand-50 to-white px-4">
+    <div className="relative grid min-h-screen place-items-center px-4 py-16">
+      <ThemeToggle className="absolute top-4 right-4" />
       <div className="w-full max-w-md">
-        <Link to="/" className="mb-6 flex justify-center">
+        <Link to="/" className="mx-auto mb-7 flex w-fit justify-center rounded-full">
           <Logo />
         </Link>
-        <Card className="p-7">
-          <h1 className="text-xl font-bold">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
-          <p className="mt-1 text-sm text-slate-500">
+        <Card className="p-7 shadow-lg sm:p-8">
+          <h1 className="font-display text-3xl font-semibold tracking-tight">{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
+          <p className="mt-1 text-sm text-ink-soft">
             {mode === 'login' ? 'Log in to your dashboard.' : 'Takes a minute. Then connect Instagram and WhatsApp.'}
           </p>
           <form onSubmit={submit} className="mt-6 space-y-4">
@@ -58,11 +60,11 @@ function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
               {mode === 'login' ? 'Log in' : 'Create account'}
             </Button>
           </form>
-          <p className="mt-5 text-center text-sm text-slate-500">
+          <p className="mt-6 border-t border-line pt-5 text-center text-sm text-ink-soft">
             {mode === 'login' ? (
-              <>No account? <Link to="/signup" className="font-semibold text-brand-600">Sign up</Link></>
+              <>No account? <Link to="/signup" className="font-semibold text-brand-600 hover:underline">Sign up</Link></>
             ) : (
-              <>Already have one? <Link to="/login" className="font-semibold text-brand-600">Log in</Link></>
+              <>Already have one? <Link to="/login" className="font-semibold text-brand-600 hover:underline">Log in</Link></>
             )}
           </p>
         </Card>

@@ -19,20 +19,20 @@ export default function Calendar() {
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">Calendar</h1>
-        <p className="text-sm text-slate-500">Scheduled and published Reels.</p>
+        <h1 className="font-display text-4xl font-semibold tracking-tight">Calendar</h1>
+        <p className="text-sm text-ink-soft">Scheduled and published Reels.</p>
       </div>
-      {items.length === 0 && <Card className="text-center text-sm text-slate-500">Nothing scheduled yet.</Card>}
+      {items.length === 0 && <Card className="py-10 text-center text-sm text-ink-soft">Nothing scheduled yet.</Card>}
       {[...days.entries()].map(([day, list]) => (
         <section key={day}>
-          <h2 className="mb-2 text-sm font-bold text-slate-500">{day}</h2>
+          <h2 className="mb-2 text-xs font-bold tracking-[0.14em] text-ink-faint uppercase">{day}</h2>
           <div className="space-y-2">
             {list.map(({ d, when }) => (
-              <Link key={d.id} to={`/app/drafts/${d.id}`} className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm hover:bg-slate-50">
-                <div className="w-16 text-sm font-bold">{when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
-                {d.cover_url ? <img src={d.cover_url} className="h-16 w-9 rounded-md object-cover" alt="" /> : <div className="h-16 w-9 rounded-md bg-slate-100" />}
+              <Link key={d.id} to={`/app/drafts/${d.id}`} className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3 shadow-xs transition hover:border-brand-200 hover:bg-surface-2 sm:gap-4">
+                <div className="w-16 shrink-0 font-display text-lg leading-tight font-semibold">{when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+                {d.cover_url ? <img src={d.cover_url} className="h-16 w-9 shrink-0 rounded-md object-cover" alt="" /> : <div className="h-16 w-9 rounded-md bg-surface-2" />}
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{d.caption_final || 'Untitled'}</div>
+                  <div className="mb-1 truncate text-sm font-medium">{d.caption_final || 'Untitled'}</div>
                   <StatusBadge status={d.status} label={d.status_label} />
                 </div>
               </Link>

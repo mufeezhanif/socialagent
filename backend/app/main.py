@@ -15,6 +15,23 @@ from app.worker import scheduler
 from app.worker.runner import Worker
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx logs full request URLs at INFO; Instagram's token calls carry client_secret / access_token in the query
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+class _RedactAccess(logging.Filter):
+    """Access lines without query strings (OAuth code/state) or signed media tokens."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple) and len(record.args) >= 3:
+            path = str(record.args[2]).split("?", 1)[0]
+            if path.startswith("/media/"):
+                path = "/media/<token>"
+            record.args = (*record.args[:2], path, *record.args[3:])
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_RedactAccess())
 log = logging.getLogger("app")
 
 

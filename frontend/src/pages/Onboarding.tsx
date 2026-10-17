@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { api, type InstagramStatus, type Me } from '../api'
 import { Button, Card, Input, Logo } from '../ui'
 import { BrandForm } from './Brand'
+import { ThemeToggle } from '../theme'
 
 interface LinkInfo {
   code: string
@@ -17,14 +18,14 @@ interface LinkInfo {
 
 function Step({ n, title, done, icon: Icon, children }: { n: number; title: string; done: boolean; icon: typeof Instagram; children: React.ReactNode }) {
   return (
-    <Card className={done ? 'border-emerald-200' : ''}>
+    <Card className={done ? 'border-success/40!' : ''}>
       <div className="flex items-start gap-4">
-        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${done ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-50 text-brand-600'}`}>
-          {done ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${done ? 'bg-success-soft text-success' : 'bg-brand-100 text-brand-700'}`}>
+          {done ? <CheckCircle2 className="h-5 w-5" aria-hidden /> : <Icon className="h-5 w-5" aria-hidden />}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold text-slate-400">STEP {n}</div>
-          <h2 className="text-lg font-bold">{title}</h2>
+          <div className="text-xs font-bold tracking-[0.14em] text-ink-faint">STEP {n}</div>
+          <h2 className="font-display text-2xl font-semibold">{title}</h2>
           <div className="mt-3">{children}</div>
         </div>
       </div>
@@ -60,6 +61,7 @@ export default function Onboarding() {
   const data = me.data
   const igDone = Boolean(data?.instagram)
   const waDone = Boolean(data?.whatsapp?.linked)
+  const doneCount = Number(igDone) + Number(waDone)
   useEffect(() => {
     if (waDone && link) {
       toast.success('WhatsApp linked')
@@ -103,24 +105,43 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-brand-50 to-white px-4 py-8">
+    <div className="min-h-screen px-4 py-8">
       <div className="mx-auto max-w-2xl space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <Logo name={data?.app_name} />
-          <Link to="/app" className="text-sm font-semibold text-slate-500 hover:text-slate-800">
-            Skip for now →
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/app" className="text-sm font-semibold whitespace-nowrap text-ink-soft hover:text-ink">
+              Skip for now →
+            </Link>
+            <ThemeToggle />
+          </div>
         </div>
-        <h1 className="pt-2 text-2xl font-black">Let's set you up</h1>
+        <h1 className="pt-4 font-display text-4xl font-semibold tracking-tight">Let's set you up</h1>
+        <div>
+          <div className="flex items-center justify-between text-xs font-semibold text-ink-soft">
+            <span>{doneCount} of 2 required steps done</span>
+            <span>{doneCount === 2 ? 'Ready to go' : 'Brand kit is optional'}</span>
+          </div>
+          <div
+            className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-2"
+            role="progressbar"
+            aria-label="Setup progress"
+            aria-valuemin={0}
+            aria-valuemax={2}
+            aria-valuenow={doneCount}
+          >
+            <div className="h-full rounded-full bg-brand-500 transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${(doneCount / 2) * 100}%` }} />
+          </div>
+        </div>
 
         <Step n={1} title="Connect Instagram" done={igDone} icon={Instagram}>
           {igDone ? (
             <div className="space-y-3">
               <div className="flex items-center gap-3">
-                {data?.instagram?.profile_picture_url && <img src={data.instagram.profile_picture_url} className="h-10 w-10 rounded-full" alt="" />}
+                {data?.instagram?.profile_picture_url && <img src={data.instagram.profile_picture_url} className="h-10 w-10 rounded-full ring-2 ring-line" alt="" />}
                 <div>
                   <div className="font-semibold">@{data?.instagram?.username}</div>
-                  <div className="text-xs text-slate-500">{data?.instagram?.account_type?.replace('_', ' ').toLowerCase()} account</div>
+                  <div className="text-xs text-ink-faint">{data?.instagram?.account_type?.replace('_', ' ').toLowerCase()} account</div>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -132,7 +153,7 @@ export default function Onboarding() {
                 </Button>
               </div>
               {igStatus && (
-                <p className={`rounded-xl p-3 text-sm ${igStatus.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+                <p className={`rounded-xl p-3 text-sm ${igStatus.ok ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'}`}>
                   {igStatus.ok
                     ? `Working. ${igStatus.quota_usage ?? 0} of ${igStatus.quota_total ?? 100} posts used in the last 24 h.`
                     : `Problem: ${igStatus.error}. Try Reconnect.`}
@@ -141,12 +162,12 @@ export default function Onboarding() {
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-slate-600">Needs a Professional account (Creator or Business). Switch for free in Instagram settings.</p>
+              <p className="text-sm text-ink-soft">Needs a Professional account (Creator or Business). Switch for free in Instagram settings.</p>
               <Button variant="ig" onClick={connectInstagram} loading={busy} disabled={!data?.instagram_configured}>
                 <Instagram className="h-4 w-4" /> Connect Instagram
               </Button>
               {!data?.instagram_configured && (
-                <p className="rounded-xl bg-amber-50 p-3 text-xs text-amber-800">
+                <p className="rounded-xl bg-warn-soft p-3 text-xs text-warn">
                   Instagram isn't set up on this server yet. An admin needs to add the Meta app's Instagram App ID and
                   secret (IG_APP_ID / IG_APP_SECRET). Details on the Admin page.
                 </p>
@@ -157,10 +178,10 @@ export default function Onboarding() {
 
         <Step n={2} title="Link WhatsApp" done={waDone} icon={MessageCircle}>
           {waDone ? (
-            <p className="text-sm text-slate-600">Linked to +{data?.whatsapp?.phone}. Send your videos to the bot on WhatsApp.</p>
+            <p className="text-sm text-ink-soft">Linked to +{data?.whatsapp?.phone}. Send your videos to the bot on WhatsApp.</p>
           ) : link ? (
             <div className="grid items-center gap-5 sm:grid-cols-[auto_1fr]">
-              <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <div className="w-fit rounded-2xl bg-white p-3 shadow-sm ring-1 ring-line">
                 <QRCodeSVG value={link.wa_link} size={150} />
               </div>
               <div className="space-y-3 text-sm">
@@ -173,7 +194,7 @@ export default function Onboarding() {
                     <MessageCircle className="h-4 w-4" /> Open WhatsApp
                   </Button>
                 </a>
-                <p className="text-xs text-slate-500">On a computer? Scan the QR with your phone. This page updates by itself once the message arrives.</p>
+                <p className="text-xs text-ink-faint">On a computer? Scan the QR with your phone. This page updates by itself once the message arrives.</p>
               </div>
             </div>
           ) : (

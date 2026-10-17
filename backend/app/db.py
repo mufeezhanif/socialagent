@@ -33,6 +33,7 @@ class Base(DeclarativeBase):
 db_url, connect_args = normalize_db_url(settings.database_url)
 if db_url.startswith("sqlite"):
     Path(db_url.split("///", 1)[1]).parent.mkdir(parents=True, exist_ok=True)
+    connect_args["timeout"] = 30  # wait for the write lock instead of "database is locked" after 5 s
 
 engine = create_async_engine(db_url, connect_args=connect_args, pool_pre_ping=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)

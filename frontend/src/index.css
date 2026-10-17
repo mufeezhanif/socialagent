@@ -1,24 +1,206 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Palette: cognac + cream (light), espresso + caramel (dark) ---------- */
+
+:root {
+  color-scheme: light;
+
+  --canvas: #f7f1e8;
+  --surface: #fffcf7;
+  --surface-2: #f1e7d9;
+  --line: #e4d5c1;
+  --ink: #2a1c13;
+  --ink-soft: #5e4a3b;
+  --ink-faint: #786351;
+  --on-brand: #fffcf7;
+  --gold: #b8925a;
+
+  --brand-50: #faf3ea;
+  --brand-100: #f2e3cf;
+  --brand-200: #e5c9a6;
+  --brand-300: #d4a877;
+  --brand-400: #c08a54;
+  --brand-500: #a86f3b;
+  --brand-600: #8b5a2b;
+  --brand-700: #6f4520;
+  --brand-800: #553418;
+  --brand-900: #3d2511;
+
+  --success: #2e6a3c;
+  --success-soft: #e3eedc;
+  --warn: #835a0c;
+  --warn-soft: #f7e8c6;
+  --danger: #a33227;
+  --danger-soft: #f8e0da;
+  --info: #2c5875;
+  --info-soft: #e0e9ef;
+
+  --bubble: #d9fdd3;
+  --chat: #ede4d6;
+  --chat-dot: rgb(94 74 59 / 0.07);
+
+  --sh-1: rgb(74 46 22 / 0.06);
+  --sh-2: rgb(74 46 22 / 0.1);
+  --sh-3: rgb(74 46 22 / 0.16);
+  --glow-1: rgb(212 168 119 / 0.28);
+  --glow-2: rgb(184 146 90 / 0.16);
+  --grain: 0.05;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --canvas: #15100c;
+  --surface: #1e1712;
+  --surface-2: #2a2019;
+  --line: #3a2d23;
+  --ink: #f4ebdd;
+  --ink-soft: #cdbba5;
+  --ink-faint: #9c8876;
+  --on-brand: #1a120c;
+  --gold: #d4ae72;
+
+  /* Remapped so tinted backgrounds stay dark and fills stay light enough for dark text */
+  --brand-50: #2a1e14;
+  --brand-100: #3b2919;
+  --brand-200: #5a3d22;
+  --brand-300: #8a5f36;
+  --brand-400: #b07c48;
+  --brand-500: #c08a54;
+  --brand-600: #c8935c;
+  --brand-700: #d9a874;
+  --brand-800: #e8c49a;
+  --brand-900: #f4dfc3;
+
+  --success: #93cf9c;
+  --success-soft: #1d2a1c;
+  --warn: #e9c27a;
+  --warn-soft: #332611;
+  --danger: #f09b8e;
+  --danger-soft: #3a1d17;
+  --info: #9dc4df;
+  --info-soft: #18252e;
+
+  --bubble: #1e4b3c;
+  --chat: #17110d;
+  --chat-dot: rgb(244 235 221 / 0.045);
+
+  --sh-1: rgb(0 0 0 / 0.25);
+  --sh-2: rgb(0 0 0 / 0.35);
+  --sh-3: rgb(0 0 0 / 0.5);
+  --glow-1: rgb(200 147 92 / 0.1);
+  --glow-2: rgb(212 174 114 / 0.06);
+  --grain: 0.07;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
+  --color-on-brand: var(--on-brand);
+  --color-gold: var(--gold);
+
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-bubble: var(--bubble);
+
+  --shadow-xs: 0 1px 2px 0 var(--sh-1);
+  --shadow-sm: 0 1px 2px 0 var(--sh-1), 0 2px 6px -1px var(--sh-1);
+  --shadow-md: 0 2px 4px -1px var(--sh-1), 0 8px 18px -4px var(--sh-2);
+  --shadow-lg: 0 4px 8px -2px var(--sh-1), 0 16px 32px -8px var(--sh-2);
+  --shadow-xl: 0 8px 16px -4px var(--sh-2), 0 24px 48px -12px var(--sh-3);
+  --shadow-2xl: 0 30px 60px -15px var(--sh-3);
+}
+
 @theme {
-  --color-brand-50: #f5f3ff;
-  --color-brand-100: #ede9fe;
-  --color-brand-500: #8b5cf6;
-  --color-brand-600: #7c3aed;
-  --color-brand-700: #6d28d9;
   --color-wa: #25d366;
   --color-wa-dark: #128c7e;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Cormorant Garamond", "Cormorant", ui-serif, Georgia, "Times New Roman", serif;
+  --font-script: "Great Vibes", "Pinyon Script", cursive;
 }
 
-html,
-body,
-#root {
-  min-height: 100%;
-}
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
 
-body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  html {
+    scrollbar-color: var(--line) transparent;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+
+  /* Warm glow + paper grain, painted behind all content */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1100px 620px at 8% -12%, var(--glow-1), transparent 62%),
+      radial-gradient(900px 520px at 105% -5%, var(--glow-2), transparent 60%);
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grain);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .24 0 0 0 0 .15 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--brand-200);
+    color: var(--ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand-500);
+    outline-offset: 2px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--ink-faint);
+    opacity: 1;
+  }
 }
 
 .ig-gradient {
@@ -26,7 +208,17 @@ body {
 }
 
 .chat-bg {
-  background-color: #efeae2;
-  background-image: radial-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px);
+  background-color: var(--chat);
+  background-image: radial-gradient(var(--chat-dot) 1px, transparent 1px);
   background-size: 18px 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

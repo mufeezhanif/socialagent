@@ -207,6 +207,7 @@ async def handle_inbound(ev: InboundEvent) -> None:
             except Exception:
                 log.exception("dispatch failed for user %s", user_id)
                 await session.rollback()
+                ctx.user = await session.get(User, user_id)  # rollback expired it; lazy reload would raise MissingGreenlet
                 await ctx.say(copy.FAILED.format(stage="reading your message"))
                 await session.commit()
 

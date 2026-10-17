@@ -19,7 +19,10 @@ class Worker:
         self.stopping = False
 
     async def run(self) -> None:
-        await queue.recover_stuck(older_than_s=0)  # fresh process: nothing is really running
+        try:
+            await queue.recover_stuck(older_than_s=0)  # fresh process: nothing is really running
+        except Exception:
+            log.exception("recover_stuck failed")  # keep serving new jobs rather than silently killing the worker
         await asyncio.gather(self._lane(self.heavy, HEAVY, True), self._lane(self.light, HEAVY, False))
 
     def stop(self) -> None:

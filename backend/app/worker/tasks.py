@@ -190,7 +190,21 @@ async def caption_pack(job: Job) -> None:
         await session.commit()
 
 
+_publishing: set[str] = set()  # draft ids mid-publish in this (single) worker process
+
+
 async def publish(job: Job) -> None:
+    # a scheduler tick racing a dashboard "post now" can queue two jobs (different dedupe keys); post once
+    if job.draft_id in _publishing:
+        return
+    _publishing.add(job.draft_id)
+    try:
+        await _publish(job)
+    finally:
+        _publishing.discard(job.draft_id)
+
+
+async def _publish(job: Job) -> None:
     async with SessionLocal() as session:
         draft = await session.get(Draft, job.draft_id)
         if draft is None or draft.status != S.PUBLISHING:

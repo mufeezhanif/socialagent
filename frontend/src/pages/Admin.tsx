@@ -29,9 +29,9 @@ interface ServerConfig {
 
 function Row({ label, value, ok }: { label: string; value: React.ReactNode; ok?: boolean }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 py-2 text-sm last:border-0">
-      <span className="text-slate-500">{label}</span>
-      <span className={`font-medium ${ok === false ? 'text-red-600' : ok ? 'text-emerald-700' : ''}`}>{value}</span>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line/70 py-2.5 text-sm last:border-0">
+      <span className="text-ink-faint">{label}</span>
+      <span className={`min-w-0 font-medium break-all ${ok === false ? 'text-danger' : ok ? 'text-success' : ''}`}>{value}</span>
     </div>
   )
 }
@@ -67,10 +67,10 @@ export default function Admin() {
   const open = s?.status === 'open'
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-2xl font-bold">Admin</h1>
+      <h1 className="font-display text-4xl font-semibold tracking-tight">Admin</h1>
       {config.data && (
         <Card>
-          <h2 className="font-bold">Server setup</h2>
+          <h2 className="font-display text-2xl font-semibold">Server setup</h2>
           <div className="mt-2">
             <Row label="Public URL" value={config.data.app_base_url} />
             <Row label="Instagram app" value={config.data.instagram_configured ? 'configured' : 'missing IG_APP_ID / IG_APP_SECRET'} ok={config.data.instagram_configured} />
@@ -78,7 +78,7 @@ export default function Admin() {
               label="Instagram redirect URI (add in Meta)"
               value={
                 <button
-                  className="font-mono text-xs text-brand-700 underline"
+                  className="text-left font-mono text-xs break-all text-brand-700 underline decoration-brand-300 underline-offset-2"
                   onClick={() => navigator.clipboard.writeText(config.data!.instagram_redirect_uri).then(() => toast.success('Copied'))}
                 >
                   {config.data.instagram_redirect_uri}
@@ -95,45 +95,45 @@ export default function Admin() {
       )}
       <Card className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-bold">WhatsApp bot</h2>
-          <span className={`rounded-full px-3 py-1 text-xs font-bold ${open ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+          <h2 className="font-display text-2xl font-semibold">WhatsApp bot</h2>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${open ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn'}`}>
             {s?.status || '...'}
             {s?.paused ? ' · paused' : ''}
           </span>
         </div>
         {status.isLoading && <Spinner />}
         {open && (
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-ink-soft">
             Connected as <b>{s?.me?.name || 'bot'}</b> ({s?.me?.id?.split(':')[0]}). Linked users: {s?.allowlist_size ?? 0}.
           </p>
         )}
         {!open && s?.qr && (
           <div className="grid items-center gap-5 sm:grid-cols-[auto_1fr]">
-            <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+            <div className="w-fit rounded-2xl bg-white p-3 shadow-sm ring-1 ring-line">
               <QRCodeSVG value={s.qr} size={220} />
             </div>
-            <div className="space-y-2 text-sm text-slate-600">
+            <div className="space-y-2 text-sm text-ink-soft">
               <p>On the bot phone: WhatsApp → Settings → Linked devices → Link a device, then scan.</p>
-              <p className="text-xs text-amber-700">This QR gives full access to that WhatsApp account. Never share or screenshot it.</p>
+              <p className="text-xs font-medium text-warn">This QR gives full access to that WhatsApp account. Never share or screenshot it.</p>
             </div>
           </div>
         )}
         {!open && (
           <div className="space-y-2">
             <Field label="Or pair with a code" hint="Bot phone number with country code. Then on the phone: Linked devices → Link with phone number.">
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="923001234567" />
                 <Button variant="secondary" onClick={() => call('pair', '/api/admin/wa/pair-code', { phone })} loading={busy === 'pair'}>
                   Get code
                 </Button>
               </div>
             </Field>
-            {s?.pairing_code && <p className="font-mono text-2xl font-bold tracking-widest">{s.pairing_code}</p>}
+            {s?.pairing_code && <p className="font-mono text-2xl font-bold tracking-widest text-brand-700">{s.pairing_code}</p>}
           </div>
         )}
-        {s?.last_error && <p className="text-xs text-slate-500">Last disconnect: {s.last_error}</p>}
-        {s?.error && <p className="text-xs text-red-600">{s.error}</p>}
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+        {s?.last_error && <p className="text-xs text-ink-faint">Last disconnect: {s.last_error}</p>}
+        {s?.error && <p className="text-xs text-danger">{s.error}</p>}
+        <div className="flex flex-wrap gap-2 border-t border-line/70 pt-4">
           <Button variant="secondary" onClick={() => call('pause', '/api/admin/wa/pause', { paused: !s?.paused })} loading={busy === 'pause'}>
             {s?.paused ? 'Resume bot' : 'Pause bot'}
           </Button>
@@ -143,10 +143,10 @@ export default function Admin() {
         </div>
       </Card>
       <Card>
-        <h2 className="font-bold">Activity</h2>
+        <h2 className="font-display text-2xl font-semibold">Activity</h2>
         {stats.data && (
-          <div className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
-            <div>Users: <b>{stats.data.users}</b></div>
+          <div className="mt-2 grid gap-2 text-sm text-ink-soft sm:grid-cols-3">
+            <div>Users: <b className="text-ink">{stats.data.users}</b></div>
             <div>Drafts: {Object.entries(stats.data.drafts).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}</div>
             <div>Jobs: {Object.entries(stats.data.jobs).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}</div>
           </div>
