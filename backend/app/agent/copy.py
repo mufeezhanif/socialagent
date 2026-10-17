@@ -16,6 +16,8 @@ RECEIVED_REPLACED = "🎬 New video received. Your previous draft is saved on th
 STILL_WORKING = "⏳ Still working on your video, hang tight."
 TOO_LONG = "That video is {dur}s long. I can edit up to {max}s right now. Please send a shorter clip."
 TOO_SHORT = "That clip is very short ({dur}s). Send at least 3 seconds."
+TOO_BIG = "I couldn't download that video (it may be too big). Please send it again, or a shorter clip (up to {max}s)."
+RETRYING = "🔁 Trying again..."
 ONLY_VIDEO = "I edit videos for now. Send me a video 🎬"
 NO_DRAFT = "Send me a video to get started 🎬"
 

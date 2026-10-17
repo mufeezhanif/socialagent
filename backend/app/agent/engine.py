@@ -231,7 +231,7 @@ async def dispatch(ctx: Ctx, ev: InboundEvent) -> None:
         return
     if ev.kind == "video":
         if ev.too_large or not ev.media_path:
-            await ctx.say(copy.TOO_LONG.format(dur="too", max=settings.max_video_seconds))
+            await ctx.say(copy.TOO_BIG.format(max=settings.max_video_seconds))
             return
         await start_draft(ctx, Path(ev.media_path), text or None)
         return
@@ -245,7 +245,7 @@ async def dispatch(ctx: Ctx, ev: InboundEvent) -> None:
             await ctx.say(copy.NO_DRAFT)
         return
     if ev.kind == "reaction":
-        if draft.status == S.AWAITING_VIDEO_APPROVAL and ev.reaction in intents.LIKE_REACTIONS:
+        if draft.status == S.AWAITING_VIDEO_APPROVAL and intents.is_like(ev.reaction):
             await approve_video(ctx, draft)
         return
     if low == "retry":
@@ -544,7 +544,7 @@ async def retry(ctx: Ctx, draft: Draft) -> None:
     elif draft.master_path:
         draft.status = S.REVISING
         await enqueue(ctx.session, "revise_video", draft_id=draft.id, payload={})
-        await ctx.say(copy.REVISING.format(n=len(draft.revision_notes or []), max=settings.max_revisions), draft)
+        await ctx.say(copy.RETRYING, draft)  # "revision 0 of 3" read oddly for a failed first edit
     else:
         draft.status = S.PROCESSING
         await enqueue(ctx.session, "process_video", draft_id=draft.id)

@@ -105,7 +105,7 @@ def verify_media_token(token: str) -> Path | None:
     except ValueError:
         return None
     expected = _b64(hmac.new(settings.media_signing_secret.encode(), body.encode(), hashlib.sha256).digest())
-    if not hmac.compare_digest(sig, expected):
+    if not hmac.compare_digest(sig.encode(), expected.encode()):  # str compare raises on non-ASCII input
         return None
     try:
         data = json.loads(_unb64(body))
@@ -125,4 +125,4 @@ def new_link_code() -> str:
 
 
 def internal_secret_ok(value: str | None) -> bool:
-    return bool(value) and hmac.compare_digest(value, settings.internal_shared_secret)
+    return bool(value) and hmac.compare_digest(value.encode(), settings.internal_shared_secret.encode())

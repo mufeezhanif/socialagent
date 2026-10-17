@@ -20,10 +20,14 @@ def run(coro):
 @pytest.mark.parametrize(
     "text,expected",
     [("1", "approve"), ("👍", "approve"), ("Looks good!", "approve"), ("4", "discard"), ("3", "style"),
-     ("make it cinematic", "style"), ("2", "change")],
+     ("make it cinematic", "style"), ("2", "change"), ("👍🏽", "approve"), ("Awesome!", "approve")],
 )
 def test_approval_quick_intents(text, expected):
     assert run(intents.approval(text)).name == expected
+
+
+def test_skin_tone_reactions_count_as_likes():
+    assert intents.is_like("👍🏻") and intents.is_like("❤️") and not intents.is_like("😢") and not intents.is_like(None)
 
 
 def test_change_with_inline_notes():

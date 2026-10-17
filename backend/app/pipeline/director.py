@@ -55,7 +55,7 @@ async def direct(
     lines = [
         f"Clip: {duration:.1f} s, {probe['width']}x{probe['height']} {orientation}, audio: {'yes' if probe['has_audio'] else 'no'}.",
         f"Face detection: {face}.",
-        f"Brand kit: {json.dumps(brand, ensure_ascii=False)}",
+        f"Brand kit: {json.dumps({k: v for k, v in brand.items() if v}, ensure_ascii=False)}",  # empty fields cost tokens
         f"Requested style: {style_request or 'choose the best fit'}.",
         f"User notes about this video: {user_context or '(none)'}",
     ]

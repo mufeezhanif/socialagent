@@ -176,7 +176,7 @@ async def caption_pack(job: Job) -> None:
     async with SessionLocal() as session:
         d = await session.get(Draft, draft.id)
         d.caption_pack = pack
-        audit(session, user.id, d.id, "ai", "wrote_captions", tweak=tweak, writer="claude" if from_ai else "fallback")
+        audit(session, user.id, d.id, "ai", "wrote_captions", tweak=tweak, writer="ai" if from_ai else "fallback")
         if d.status == S.CAPTIONING:
             d.status = S.AWAITING_CAPTION_CHOICE
             opts = pack["options"]

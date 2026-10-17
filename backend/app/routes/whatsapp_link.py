@@ -53,7 +53,7 @@ async def link_status(user: User = Depends(current_user), session: AsyncSession 
         "linked": bool(link.verified_at),
         "phone": link.phone,
         "verified_at": link.verified_at.isoformat() if link.verified_at else None,
-        "pending_code": link.link_code,
+        "pending_code": link.link_code if link.link_code_expires_at and link.link_code_expires_at > utcnow() else None,
     }
 
 

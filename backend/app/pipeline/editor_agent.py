@@ -709,7 +709,7 @@ async def run_editor(
     if claude.enabled() and "anthropic" in settings.llm_providers:
         from app.pipeline.director import direct
 
-        sb, from_ai = await direct(frames=frames, words=words, probe=probe, face_x=face_x, style_request=style_request,
+        sb, from_ai = await direct(frames=_spread(frames, 4), words=words, probe=probe, face_x=face_x, style_request=style_request,
                                    user_context=user_context, brand=brand, change_requests=change_requests,
                                    previous=previous)
         if from_ai:

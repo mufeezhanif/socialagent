@@ -1,4 +1,4 @@
-"""Turn a user's reply into an intent: numbers and keywords first, Claude only for free text."""
+"""Turn a user's reply into an intent: numbers and keywords first, an LLM only for free text."""
 
 import re
 from dataclasses import dataclass, field
@@ -11,11 +11,13 @@ from app.integrations import llm
 from app.pipeline.styles import STYLE_ORDER
 
 APPROVE_WORDS = {"1", "approve", "approved", "yes", "y", "ok", "okay", "good", "great", "perfect", "love it",
-                 "looks good", "nice", "done", "👍", "✅", "👌", "❤️", "🔥", "go", "go ahead"}
+                 "looks good", "nice", "done", "👍", "✅", "👌", "❤️", "🔥", "go", "go ahead", "looks great", "awesome",
+                 "amazing", "cool", "sure", "yes please", "all good", "fine", "approve it", "👏", "😍", "💯"}
 DISCARD_WORDS = {"4", "discard", "delete", "trash", "drop it", "no thanks"}
 SKIP_WORDS = {"skip", "no", "nope", "none", "nothing", "n/a", "na", "-", "no thanks", "nah"}
 MOTION_WORDS = {"5", "motion", "motion graphics", "animate", "animate it", "animated", "brag", "make it pop", "✨"}
-LIKE_REACTIONS = {"👍", "❤️", "❤", "🔥", "✅", "👌", "😍", "💯"}
+LIKE_REACTIONS = {"👍", "❤️", "❤", "🔥", "✅", "👌", "😍", "💯", "👏"}
+SKIN_TONE_RE = re.compile("[\U0001F3FB-\U0001F3FF]")  # 👍🏽 should count as 👍
 
 
 @dataclass
@@ -25,7 +27,11 @@ class Intent:
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower().rstrip(".!"))
+    return re.sub(r"\s+", " ", SKIN_TONE_RE.sub("", text).strip().lower().rstrip(".!"))
+
+
+def is_like(reaction: str | None) -> bool:
+    return bool(reaction) and SKIN_TONE_RE.sub("", reaction) in LIKE_REACTIONS
 
 
 def _style_in(text: str) -> str | None:

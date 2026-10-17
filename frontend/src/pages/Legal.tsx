@@ -27,8 +27,9 @@ export function Privacy() {
         <li>Videos you send us, the edited versions, transcripts, captions and an activity log.</li>
       </ul>
       <p>
-        Videos are processed on our server. Short excerpts (still frames and transcript text) are sent to Anthropic's Claude API to plan
-        edits and write captions. We do not sell data or use it for advertising.
+        Videos are processed on our server. The audio is sent to Groq for transcription, and short excerpts (still frames and
+        transcript text) are sent to an AI provider (Google Gemini, Groq or Anthropic Claude) to plan edits and write captions. We do
+        not sell data or use it for advertising.
       </p>
       <p>
         The WhatsApp bot ignores and does not store messages from people who have not linked an account. You can delete your data at any
