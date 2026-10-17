@@ -2,7 +2,6 @@ import asyncio
 import json
 
 from app.integrations import llm
-from app.pipeline import editor_agent
 from app.pipeline.editor_agent import apply_rules, apply_tool, find_phrase, initial_state, run_editor, to_storyboard
 from app.services.captions import CaptionPack
 
@@ -109,8 +108,20 @@ def test_agent_falls_back_to_rules(monkeypatch):
 
     monkeypatch.setattr(llm, "providers", lambda: [llm.Provider("fake", "http://x", "k", "m", max_images=0)])
     monkeypatch.setattr(llm, "chat", broken_chat)
-    monkeypatch.setattr(editor_agent.claude, "enabled", lambda: False)
+    monkeypatch.setattr(llm.claude, "enabled", lambda: False)
     result = asyncio.run(run_editor(frames=[], words=WORDS, probe=PROBE, face_x=None, style_request=None,
                                     user_context=None, brand={}, change_requests=["captions in the middle"],
                                     previous=None, motion_requested=False))
     assert result.editor == "rules" and result.storyboard.caption_position == "middle"
+
+
+def test_chain_puts_claude_where_configured(monkeypatch):
+    groq = llm.Provider("groq", "http://x", "k", "m", max_images=0)
+    monkeypatch.setattr(llm, "providers", lambda: [groq])
+    monkeypatch.setattr(llm.claude, "enabled", lambda: True)
+    monkeypatch.setattr(llm.settings, "llm_providers", "anthropic,groq")
+    assert llm.chain() == [None, groq] and llm.names() == ["anthropic", "groq"]
+    monkeypatch.setattr(llm.settings, "llm_providers", "groq,anthropic")
+    assert llm.chain() == [groq, None]
+    monkeypatch.setattr(llm.claude, "enabled", lambda: False)
+    assert llm.chain() == [groq]

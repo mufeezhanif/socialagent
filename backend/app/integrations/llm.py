@@ -1,5 +1,5 @@
-"""Provider-agnostic LLM access: Gemini and Groq through their OpenAI-compatible endpoints, Claude as a further
-fallback, and None when nothing is configured so callers can use deterministic logic."""
+"""Provider-agnostic LLM access: Gemini and Groq through their OpenAI-compatible endpoints, Claude through its own SDK,
+tried in the LLM_PROVIDERS order, and None when nothing answers so callers can use deterministic logic."""
 
 import asyncio
 import base64
@@ -65,8 +65,21 @@ def providers() -> list[Provider]:
         )] if settings.gemini_api_key else [],
         "groq": groq,
     }
-    order = [p.strip().lower() for p in settings.llm_providers.split(",") if p.strip()]
-    return [provider for name in order for provider in available.get(name, [])]
+    return [provider for name in _order() for provider in available.get(name, [])]
+
+
+def _order() -> list[str]:
+    return [p.strip().lower() for p in settings.llm_providers.split(",") if p.strip()]
+
+
+def chain() -> list[Provider | None]:
+    """providers() with None where Claude sits in the configured order (Claude uses its own SDK, not chat())."""
+    out: list[Provider | None] = list(providers())
+    order = _order()
+    if claude.enabled() and "anthropic" in order:
+        after = set(order[order.index("anthropic") + 1 :])
+        out.insert(next((i for i, p in enumerate(out) if p.name in after), len(out)), None)
+    return out
 
 
 def any_configured() -> bool:
@@ -74,10 +87,7 @@ def any_configured() -> bool:
 
 
 def names() -> list[str]:
-    out = list(dict.fromkeys(p.name for p in providers()))
-    if claude.enabled() and "anthropic" in settings.llm_providers:
-        out.append("anthropic")
-    return out
+    return list(dict.fromkeys(p.name if p else "anthropic" for p in chain()))
 
 
 def image_part(path: Path) -> dict:
@@ -204,10 +214,17 @@ async def structured(
     effort: str = "low",
     max_tokens: int = 4000,
 ) -> T | None:
-    """Structured result from the first provider that answers validly; Claude next; None if all fail."""
+    """Structured result from the first provider (configured order) that answers validly; None if all fail."""
     images = images or []
     json_schema = strict_schema(schema)
-    for provider in providers():
+    for provider in chain():
+        if provider is None:
+            blocks: list = [claude.image_block(p) for p in images[:8]] + [{"type": "text", "text": text}]
+            result = await claude.parse(schema, system=system, content=blocks if images else text, effort=effort,
+                                        max_tokens=max_tokens)
+            if result is not None:
+                return result
+            continue
         content: list[dict] = [{"type": "text", "text": text}]
         content += [image_part(p) for p in images[: provider.max_images]]
         messages = [{"role": "system", "content": system}, {"role": "user", "content": content}]
@@ -225,11 +242,6 @@ async def structured(
                 return schema.model_validate_json(extract_json(reply.get("content") or ""))
             except (LLMError, ValidationError, ValueError) as exc:
                 log.warning("%s structured %s (%s) failed: %s", provider.name, schema.__name__, fmt["type"], str(exc)[:300])
-    if "anthropic" in settings.llm_providers:
-        from app.integrations.claude import image_block
-
-        blocks: list = [image_block(p) for p in images[:8]] + [{"type": "text", "text": text}]
-        return await claude.parse(schema, system=system, content=blocks if images else text, effort=effort, max_tokens=max_tokens)
     return None
 
 

@@ -40,8 +40,10 @@ async def parse(
     content: str | list,
     effort: str = "low",
     max_tokens: int = 8000,
+    usage: dict | None = None,
 ) -> T | None:
-    """Ask Claude for a structured result. Returns None on any failure so callers can fall back."""
+    """Ask Claude for a structured result. Returns None on any failure so callers can fall back. Token counts are
+    added to `usage` when given."""
     if not enabled():
         return None
     try:
@@ -67,6 +69,12 @@ async def parse(
     except ValidationError as exc:
         log.warning("claude output failed validation: %s", exc)
         return None
+    if usage is not None:
+        u = response.usage
+        usage["calls"] = usage.get("calls", 0) + 1
+        usage["input"] = usage.get("input", 0) + u.input_tokens + (u.cache_read_input_tokens or 0) + (
+            u.cache_creation_input_tokens or 0)
+        usage["output"] = usage.get("output", 0) + u.output_tokens
     if response.stop_reason == "refusal":
         log.warning("claude refused (%s)", getattr(response, "stop_details", None))
         return None

@@ -14,8 +14,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.config import settings
-from app.integrations import claude, llm
+from app.integrations import llm
 from app.pipeline.cuts import FILLERS, keep_segments, map_span, normalize_word, output_duration
 from app.pipeline.genres import RECIPES, VIDEO_TYPES, classify, get_recipe, type_from_request
 from app.pipeline.storyboard import Storyboard, fallback_storyboard, removed_word_set, validate_storyboard
@@ -700,22 +699,21 @@ async def run_editor(
     prompt = _prompt(words=words, probe=probe, face_x=face_x, brand=brand, user_context=user_context,
                      style_request=style_request, motion_allowed=motion_allowed, change_requests=change_requests,
                      previous=previous, target=target, language=language, units=units, guess=guess)
-    for provider in llm.providers():
-        state, usage = fresh(), {}
+    for provider in llm.chain():
+        usage: dict = {}
+        if provider is None:  # Claude: the whole storyboard in one structured call
+            from app.pipeline.director import direct
+
+            if sb := await direct(frames=_spread(frames, 4), prompt=prompt, usage=usage):
+                return finish(fresh(sb.model_dump()), True, "claude",
+                              [f"storyboard planned in one structured call (video type: {sb.video_type})"], usage)
+            continue
+        state = fresh()
         try:
             trace = await _agent(provider, state, frames, prompt, words, duration, usage)
             return finish(state, True, provider.name, trace, usage)
         except (llm.LLMError, ValidationError, ValueError) as exc:
             log.warning("editor agent via %s (%s) failed: %s", provider.name, provider.model, str(exc)[:300])
-
-    if claude.enabled() and "anthropic" in settings.llm_providers:
-        from app.pipeline.director import direct
-
-        sb, from_ai = await direct(frames=_spread(frames, 4), words=words, probe=probe, face_x=face_x, style_request=style_request,
-                                   user_context=user_context, brand=brand, change_requests=change_requests,
-                                   previous=previous)
-        if from_ai:
-            return finish(fresh(sb.model_dump()), True, "claude", ["storyboard planned in one structured call"])
 
     state = fresh()
     trace = [] if previous else auto_rules(state, words, duration, units) + auto_text(
