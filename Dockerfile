@@ -65,5 +65,5 @@ COPY --from=web /build/frontend/dist backend/app/static
 COPY supervisord.conf /etc/supervisor/conf.d/app.conf
 RUN mkdir -p /data/media
 
-EXPOSE 8000
+EXPOSE 8000 80
 CMD ["supervisord", "-c", "/etc/supervisor/conf.d/app.conf"]
