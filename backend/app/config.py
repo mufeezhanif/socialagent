@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     llm_reasoning_effort: str = "low"  # hidden reasoning is billed as output on every turn; "" = provider default
     anthropic_api_key: str = ""
-    claude_model: str = "claude-opus-5-5"
+    claude_model: str = "claude-sonnet-5-5"
 
     whisper_model: str = "small"
     whisper_compute_type: str = "int8"

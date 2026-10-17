@@ -35,7 +35,7 @@ Together) is enforced by approval gates in code.
 |---|---|
 | WhatsApp | A Node 22 + TypeScript **Baileys gateway** in the same container (internal port 3001). FastAPI owns all logic. The gateway only moves messages and media. |
 | Baileys auth | Stored in **Postgres**, encrypted (custom auth-state adapter with `BufferJSON`), so redeploys don't force re-pairing. Pairing uses a QR or pairing code on an **admin-only** page. |
-| LLM | Claude `claude-opus-5-5` through the `anthropic` SDK (`AsyncAnthropic`, `messages.parse` with Pydantic). Effort `low` for intents and time parsing, `medium` for the director and captions. Check `stop_reason` for refusals. |
+| LLM | Claude `claude-sonnet-5-5` through the `anthropic` SDK (`AsyncAnthropic`, `messages.parse` with Pydantic). Effort `low` for intents and time parsing, `medium` for the director and captions. Check `stop_reason` for refusals. |
 | Speech-to-text | **faster-whisper `small` int8** on CPU, with word timestamps and the built-in VAD. The model is baked into the image. It also transcribes voice-note instructions. |
 | Edit engine | **Stage A:** FFmpeg base edit (always runs). **Stage B:** brag-style motion layer via HyperFrames (headless Chrome + FFmpeg) if the spike passes, otherwise an FFmpeg/ASS motion pack. Switched by `RENDER_ENGINE` env. |
 | Director safety | Claude outputs **JSON storyboards only**. Code fills vetted HTML templates. LLM-written HTML or JS never runs in Chrome. |
