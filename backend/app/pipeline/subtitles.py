@@ -229,7 +229,7 @@ def build_ass(
                 events.append(f"Dialogue: 1,{ass_time(start)},{ass_time(end)},Caption,,0,0,0,," + " ".join(parts))
 
     if preset.progress_bar and out_duration > 2:
-        bar = ass_tag_color(preset.highlight)
+        bar = hl_tag  # brand accent when set
         top = LETTERBOX_PX if recipe and recipe.letterbox else 0
         dur_ms = int(out_duration * 1000)
         events.append(
@@ -258,7 +258,7 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Caption,{preset.font},{fs},{primary},{hl},{outline},{shadow},0,0,0,0,100,100,1,0,1,{preset.outline_width},2,{align},70,70,{margin_v},1
 Style: Hook,{preset.font},{int(fs * 1.1)},{primary},{hl},{box},{box},0,0,0,0,100,100,1,0,3,18,0,8,80,80,240,1
-Style: Punch,{preset.font},{int(fs * 1.25)},{ass_color(preset.highlight)},{primary},{outline},{shadow},0,0,0,0,100,100,1,0,1,{preset.outline_width + 2},3,5,80,80,0,1
+Style: Punch,{preset.font},{int(fs * 1.25)},{hl},{primary},{outline},{shadow},0,0,0,0,100,100,1,0,1,{preset.outline_width + 2},3,5,80,80,0,1
 Style: Bar,{preset.font},20,{ass_color(preset.highlight)},{primary},{outline},{shadow},0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 Style: Sticker,{preset.font},{int(fs * 0.95)},{dark},{hl},{hl},{hl},0,0,0,0,100,100,1,0,3,20,0,8,80,80,250,1
 Style: Title,{preset.font},{int(fs * 0.9)},{primary},{hl},{outline},{shadow},0,0,0,0,100,100,2,0,1,2,3,5,80,80,0,1

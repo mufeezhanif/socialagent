@@ -52,6 +52,7 @@ export default function Chat() {
       await api('/api/chat/messages', { method: 'POST', json: { text: value } })
       setTimeout(() => qc.invalidateQueries({ queryKey: ['chat'] }), 600)
     } catch (err) {
+      setText(value) // keep what they typed
       toast.error((err as Error).message)
     }
   }

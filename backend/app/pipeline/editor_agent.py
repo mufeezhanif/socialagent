@@ -208,6 +208,8 @@ def fit_to_target(state: dict, words: list[dict], units: list[dict], duration: f
 def apply_tool(state: dict, name: str, args: dict, words: list[dict], duration: float) -> str:
     """Execute one editing tool against the working storyboard. Returns a short result; errors come back as text so
     the model can correct itself."""
+    if args is not None and not isinstance(args, dict):
+        return "error: arguments must be a JSON object"
     try:
         return _apply_tool(state, name, args or {}, words, duration)
     except KeyError as exc:

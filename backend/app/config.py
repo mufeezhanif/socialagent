@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite+aiosqlite:///{(BACKEND_DIR / 'data' / 'dev.db').as_posix()}"
 
     jwt_secret: str = "dev-only-jwt-secret-change-me"
-    token_encryption_key: str = ""  # Fernet key; generated per process in dev if empty
+    token_encryption_key: str = ""  # any string; derived from jwt_secret if empty
     media_signing_secret: str = "dev-only-media-secret-change-me"
     internal_shared_secret: str = "dev-only-internal-secret-change-me"
     admin_emails: str = ""
@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.env == "prod"
+
+    @property
+    def weak_secrets(self) -> list[str]:
+        """Secrets still empty or on the public dev defaults (anyone could forge sessions and media links)."""
+        names = ("jwt_secret", "media_signing_secret", "internal_shared_secret")
+        return [n for n in names if len(getattr(self, n)) < 16 or getattr(self, n).startswith("dev-only")]
 
     @property
     def admin_email_set(self) -> set[str]:

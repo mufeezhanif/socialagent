@@ -47,6 +47,9 @@ def test_tools_guardrails():
     assert apply_tool(s, "remove_words", {"start_word": 0, "end_word": 14, "reason": "x"}, WORDS, 10).startswith("error")
     assert apply_tool(s, "set_motion_graphics", {"enabled": True}, WORDS, 10).startswith("error")
     assert apply_tool(state(motion_allowed=True), "set_motion_graphics", {"enabled": True}, WORDS, 10).startswith("ok")
+    # a model that sends a JSON array or string as arguments gets an error back instead of crashing the edit
+    assert apply_tool(s, "trim", [1, 2], WORDS, 10).startswith("error")
+    assert apply_tool(s, "set_look", "hype", WORDS, 10).startswith("error")
 
 
 def test_rules_handle_common_requests_without_llm():

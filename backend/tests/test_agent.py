@@ -46,6 +46,8 @@ def test_time_parsing():
     assert parse_time("tomorrow 9am", NOW).day == 18
     assert parse_time("today 8pm", NOW).hour == 20
     assert parse_time("blah", NOW) is None
+    assert parse_time("tonight at 9", NOW).hour == 21 and parse_time("tomorrow morning 10", NOW).hour == 10
+    assert parse_time("in an hour", NOW).hour == 2
 
 
 def test_caption_pack_limits():

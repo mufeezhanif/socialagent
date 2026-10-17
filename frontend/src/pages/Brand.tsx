@@ -93,16 +93,16 @@ export function BrandForm({ compact = false, onSaved }: { compact?: boolean; onS
           </Field>
           <Field label="Default hashtags" hint="Comma separated, always included">
             <Input
-              value={form.default_hashtags.join(', ')}
-              onChange={(e) => set('default_hashtags', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))}
+              value={form.default_hashtags.join(',')}
+              onChange={(e) => set('default_hashtags', e.target.value.split(','))}
               placeholder="homebaker, islamabadfood"
             />
           </Field>
           <Field label="Words to never use" hint="Comma separated">
             <Textarea
               rows={1}
-              value={form.banned_words.join(', ')}
-              onChange={(e) => set('banned_words', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))}
+              value={form.banned_words.join(',')}
+              onChange={(e) => set('banned_words', e.target.value.split(','))}
             />
           </Field>
           <Field label="Preferred posting time">

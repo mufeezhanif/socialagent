@@ -20,6 +20,8 @@ log = logging.getLogger("app")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.is_prod and settings.weak_secrets:
+        raise RuntimeError(f"ENV=prod but these are unset or dev defaults: {', '.join(settings.weak_secrets).upper()}")
     Path(settings.media_dir).mkdir(parents=True, exist_ok=True)
     await init_db()
     worker = Worker()

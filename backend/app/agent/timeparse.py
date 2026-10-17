@@ -3,7 +3,7 @@
 import re
 from datetime import datetime, timedelta
 
-_REL = re.compile(r"\bin\s+(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\b")
+_REL = re.compile(r"\bin\s+(\d+(?:\.\d+)?|an?)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\b")
 _CLOCK = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b")
 
 
@@ -15,7 +15,7 @@ def parse_time(text: str, now_local: datetime) -> datetime | None:
 
     m = _REL.search(t)
     if m:
-        amount = float(m.group(1))
+        amount = 1.0 if m.group(1).startswith("a") else float(m.group(1))
         minutes = amount if m.group(2).startswith("m") else amount * 60
         return now_local + timedelta(minutes=minutes)
 
@@ -29,7 +29,12 @@ def parse_time(text: str, now_local: datetime) -> datetime | None:
     for cm in _CLOCK.finditer(t):
         hour, minute, ampm = int(cm.group(1)), int(cm.group(2) or 0), cm.group(3)
         if ampm is None and cm.group(2) is None:
-            continue  # bare number like "2" is too ambiguous
+            if 1 <= hour <= 12 and any(w in t for w in ("tonight", "evening", "night")):
+                ampm = "pm"  # "tonight at 9"
+            elif 1 <= hour <= 12 and "morning" in t:
+                ampm = "am"
+            else:
+                continue  # bare number like "2" is too ambiguous
         if hour > 23 or minute > 59:
             continue
         if ampm == "pm" and hour < 12:

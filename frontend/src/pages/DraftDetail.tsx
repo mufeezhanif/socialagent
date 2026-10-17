@@ -57,8 +57,10 @@ export default function DraftDetailPage() {
       const data = await api<DraftDetail>(`/api/drafts/${id}/${path}`, { method: 'POST', json })
       qc.setQueryData(key, data)
       qc.invalidateQueries({ queryKey: ['drafts'] })
+      return true
     } catch (err) {
       toast.error((err as Error).message)
+      return false
     } finally {
       setBusy(null)
     }
@@ -205,7 +207,7 @@ export default function DraftDetailPage() {
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder='Ask for changes, e.g. "cut the first 3 seconds", "no hook"' />
-                <Button variant="secondary" disabled={!notes.trim()} loading={busy === 'changes'} onClick={() => act('changes', 'changes', { notes }).then(() => setNotes(''))}>
+                <Button variant="secondary" disabled={!notes.trim()} loading={busy === 'changes'} onClick={() => act('changes', 'changes', { notes }).then((ok) => ok && setNotes(''))}>
                   <Wrench className="h-4 w-4" /> Apply
                 </Button>
               </div>
@@ -216,7 +218,7 @@ export default function DraftDetailPage() {
             <Card className="space-y-3 border-brand-200">
               <h2 className="font-bold">Anything the caption should mention?</h2>
               <Textarea rows={2} value={tweak} onChange={(e) => setTweak(e.target.value)} placeholder="Offer, link, location... or leave empty" />
-              <Button onClick={() => act('captions', 'captions/regenerate', { tweak: tweak ? `Include these details: ${tweak}` : null })} loading={busy === 'captions'}>
+              <Button onClick={() => act('captions', 'captions/regenerate', { tweak: tweak ? `Include these details: ${tweak}` : null }).then((ok) => ok && setTweak(''))} loading={busy === 'captions'}>
                 Write captions
               </Button>
             </Card>
@@ -248,7 +250,7 @@ export default function DraftDetailPage() {
               )}
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input value={tweak} onChange={(e) => setTweak(e.target.value)} placeholder='Tweak, e.g. "shorter", "more playful"' />
-                <Button variant="secondary" disabled={!tweak.trim()} loading={busy === 'regen'} onClick={() => act('regen', 'captions/regenerate', { tweak }).then(() => setTweak(''))}>
+                <Button variant="secondary" disabled={!tweak.trim()} loading={busy === 'regen'} onClick={() => act('regen', 'captions/regenerate', { tweak }).then((ok) => ok && setTweak(''))}>
                   Rewrite
                 </Button>
               </div>
@@ -268,7 +270,7 @@ export default function DraftDetailPage() {
                 </Button>
                 <span className="text-sm text-slate-400">or</span>
                 <Input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="w-auto" />
-                <Button variant="secondary" onClick={() => act('schedule', 'publish', { mode: 'schedule', publish_at: new Date(when).toISOString() })} loading={busy === 'schedule'}>
+                <Button variant="secondary" onClick={() => act('schedule', 'publish', { mode: 'schedule', publish_at: new Date(when).toISOString() })} loading={busy === 'schedule'} disabled={!when}>
                   🗓 Schedule
                 </Button>
               </div>
