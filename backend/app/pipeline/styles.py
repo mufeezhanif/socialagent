@@ -36,7 +36,7 @@ PRESETS: dict[str, StylePreset] = {
     "cinematic": StylePreset(
         "cinematic", "Cinematic", "moody grade, calm captions",
         "Anton", 70, False, 4, "#F5F1E8", "#E8B86D", "#101010", 3,
-        "eq=contrast=1.08:saturation=0.82,colorbalance=rs=0.04:gs=0.01:bs=-0.05,vignette=PI/5", False, False, False,
+        "eq=contrast=1.08:saturation=0.82,lutyuv=u='val-5':v='val+4',vignette=PI/5", False, False, False,
     ),
     "funny": StylePreset(
         "funny", "Funny", "loud colours, popping words",
@@ -51,7 +51,7 @@ PRESETS: dict[str, StylePreset] = {
     "luxury": StylePreset(
         "luxury", "Luxury", "warm, elegant, gold accents",
         "Anton", 74, True, 3, "#FFFDF7", "#D4AF37", "#1A1408", 3,
-        "eq=contrast=1.05:saturation=0.92,colorbalance=rs=0.05:gs=0.02:bs=-0.04,vignette=PI/6", False, False, False,
+        "eq=contrast=1.05:saturation=0.92,lutyuv=u='val-5':v='val+5',vignette=PI/6", False, False, False,
     ),
 }
 

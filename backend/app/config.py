@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -33,6 +34,7 @@ class Settings(BaseSettings):
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    groq_fallback_model: str = "openai/gpt-oss-20b"  # own daily quota: used when the main model is rate limited
     groq_vision_model: str = "qwen/qwen3.8-27b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
     groq_whisper_model: str = "whisper-large-v3-turbo"
@@ -40,6 +42,7 @@ class Settings(BaseSettings):
     caption_language: str = "en"  # "en": English captions (translated) for non-English speech; "source": keep speech language
     transcribe_provider: str = "auto"  # auto (Groq if key, else local) | groq | local
 
+    llm_reasoning_effort: str = "low"  # hidden reasoning is billed as output on every turn; "" = provider default
     anthropic_api_key: str = ""
     claude_model: str = "claude-opus-5-5"
 
@@ -66,6 +69,14 @@ class Settings(BaseSettings):
     max_upload_mb: int = 100
     max_revisions: int = 3
     render_concurrency: int = 1
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_placeholders(cls, values):
+        # "<paste ...>" values copied from .env.deploy mean "not set yet": fall back to defaults
+        if isinstance(values, dict):
+            return {k: v for k, v in values.items() if not (isinstance(v, str) and v.strip().startswith("<"))}
+        return values
 
     @property
     def is_prod(self) -> bool:

@@ -38,28 +38,35 @@ class Provider:
 
 
 def providers() -> list[Provider]:
-    """OpenAI-compatible providers that have keys, in the configured order."""
+    """OpenAI-compatible providers that have keys, in the configured order. Groq gets a second, smaller model as a
+    fallback: each Groq model has its own daily token budget."""
+    effort = {"reasoning_effort": settings.llm_reasoning_effort} if settings.llm_reasoning_effort else {}
+    groq = []
+    if settings.groq_api_key:
+        for model in dict.fromkeys(m for m in (settings.groq_model, settings.groq_fallback_model) if m):
+            groq.append(Provider(
+                name="groq",
+                base_url=settings.groq_base_url.rstrip("/"),
+                api_key=settings.groq_api_key,
+                model=model,
+                max_images=0,
+                vision_model=settings.groq_vision_model or None,
+                vision_max_images=3,
+                extra=effort if model.startswith("openai/gpt-oss") else {},
+            ))
     available = {
-        "gemini": Provider(
+        "gemini": [Provider(
             name="gemini",
             base_url=settings.gemini_base_url.rstrip("/"),
             api_key=settings.gemini_api_key,
             model=settings.gemini_model,
-            max_images=8,
-        ) if settings.gemini_api_key else None,
-        "groq": Provider(
-            name="groq",
-            base_url=settings.groq_base_url.rstrip("/"),
-            api_key=settings.groq_api_key,
-            model=settings.groq_model,
-            max_images=0,
-            vision_model=settings.groq_vision_model or None,
-            vision_max_images=3,
-            extra={"reasoning_effort": "medium"} if settings.groq_model.startswith("openai/gpt-oss") else {},
-        ) if settings.groq_api_key else None,
+            max_images=4,  # images are re-sent every turn: 4 spread frames show the clip at half the cost of 8
+            extra=effort,
+        )] if settings.gemini_api_key else [],
+        "groq": groq,
     }
     order = [p.strip().lower() for p in settings.llm_providers.split(",") if p.strip()]
-    return [available[name] for name in order if available.get(name)]
+    return [provider for name in order for provider in available.get(name, [])]
 
 
 def any_configured() -> bool:
@@ -67,7 +74,7 @@ def any_configured() -> bool:
 
 
 def names() -> list[str]:
-    out = [p.name for p in providers()]
+    out = list(dict.fromkeys(p.name for p in providers()))
     if claude.enabled() and "anthropic" in settings.llm_providers:
         out.append("anthropic")
     return out
@@ -76,6 +83,31 @@ def names() -> list[str]:
 def image_part(path: Path) -> dict:
     data = base64.standard_b64encode(path.read_bytes()).decode()
     return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{data}"}}
+
+
+_TRY_AGAIN_RE = re.compile(r"try again in (?:(\d+)h)?(?:(\d+)m(?!s))?(?:([\d.]+)s)?(?:([\d.]+)ms)?", re.IGNORECASE)
+MAX_RATE_WAIT = 45.0  # wait out a per-minute limit; anything longer (daily quota) moves on to the next provider
+
+
+def rate_limit_wait(response: httpx.Response) -> float | None:
+    """Seconds until a 429 clears: from 'try again in 1m2.5s' in the body or the retry-after header."""
+    m = _TRY_AGAIN_RE.search(response.text or "")
+    if m and any(m.groups()):
+        h, mins, sec, ms = (float(x) if x else 0.0 for x in m.groups())
+        return h * 3600 + mins * 60 + sec + ms / 1000
+    retry_after = response.headers.get("retry-after") or ""
+    try:
+        return float(retry_after)
+    except ValueError:
+        return None
+
+
+def add_usage(usage: dict, message: dict) -> None:
+    """Accumulate the API's token counts (prompt/completion, reasoning included) into `usage`."""
+    u = message.get("_usage") or {}
+    usage["calls"] = usage.get("calls", 0) + 1
+    usage["input"] = usage.get("input", 0) + int(u.get("prompt_tokens") or 0)
+    usage["output"] = usage.get("output", 0) + int(u.get("completion_tokens") or 0)
 
 
 async def chat(
@@ -88,7 +120,7 @@ async def chat(
     max_tokens: int = 4000,
     use_extra: bool = True,
 ) -> dict:
-    """One chat completion. Returns the assistant message dict (tool_calls included)."""
+    """One chat completion. Returns the assistant message dict (tool_calls included; token counts in "_usage")."""
     payload: dict = {"model": model or provider.model, "messages": messages, "max_tokens": max_tokens}
     if tools:
         payload["tools"] = tools
@@ -107,10 +139,20 @@ async def chat(
             last_error = f"{provider.name} connection error: {exc}"
             await asyncio.sleep(1.5 * (attempt + 1))
             continue
-        if response.status_code == 429 or response.status_code >= 500:
+        if response.status_code == 429:
+            last_error = f"{provider.name} {payload['model']} 429: {response.text[:200]}"
+            wait = rate_limit_wait(response)
+            if wait is not None and wait > MAX_RATE_WAIT:
+                raise LLMError(f"{last_error} (quota resets in {wait:.0f}s)")
+            await asyncio.sleep(min(wait if wait is not None else 4 * (attempt + 1), MAX_RATE_WAIT) + 0.5)
+            continue
+        if response.status_code >= 500:
             last_error = f"{provider.name} {response.status_code}: {response.text[:200]}"
-            retry_after = response.headers.get("retry-after")
-            await asyncio.sleep(min(float(retry_after), 8) if retry_after and retry_after.replace(".", "").isdigit() else 2 * (attempt + 1))
+            await asyncio.sleep(2 * (attempt + 1))
+            continue
+        if response.status_code == 400 and "reasoning" in response.text and "reasoning_effort" in payload:
+            payload.pop("reasoning_effort")  # this model does not take the setting: retry without it
+            last_error = f"{provider.name} 400: {response.text[:200]}"
             continue
         if response.status_code >= 400:
             raise LLMError(f"{provider.name} {response.status_code}: {response.text[:400]}")
@@ -118,6 +160,7 @@ async def chat(
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         message["_finish_reason"] = choice.get("finish_reason")
+        message["_usage"] = data.get("usage") or {}
         return message
     raise LLMError(last_error)
 
@@ -190,7 +233,7 @@ async def structured(
     return None
 
 
-async def describe_frames(provider: Provider, frames: list[Path]) -> str:
+async def describe_frames(provider: Provider, frames: list[Path], usage: dict | None = None) -> str:
     """For text-only models: a short visual description from the provider's vision model."""
     if not provider.vision_model or not frames:
         return ""
@@ -202,6 +245,8 @@ async def describe_frames(provider: Provider, frames: list[Path]) -> str:
     try:
         reply = await chat(provider, [{"role": "user", "content": content}], model=provider.vision_model,
                            max_tokens=600, use_extra=False)
+        if usage is not None:
+            add_usage(usage, reply)
         return (reply.get("content") or "").strip()[:800]
     except LLMError as exc:
         log.warning("frame description failed: %s", exc)

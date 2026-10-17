@@ -89,6 +89,9 @@ def fallback_pack(transcript_text: str, storyboard: dict, brand: dict) -> dict:
     return validate_pack(pack, brand)
 
 
+VISUAL_KEYS = {"accent_color", "default_style", "handle"}  # render-only settings, no use to the caption writer
+
+
 async def generate(
     *,
     transcript_text: str,
@@ -104,7 +107,7 @@ async def generate(
         f"What the video shows: {storyboard.get('scene_description') or '(unknown)'}",
         f"On-screen hook: {storyboard.get('hook_text') or '(none)'}",
         f"User notes: {user_context or '(none)'}",
-        f"Brand kit: {json.dumps(brand, ensure_ascii=False)}",
+        f"Brand kit: {json.dumps({k: v for k, v in brand.items() if v and k not in VISUAL_KEYS}, ensure_ascii=False)}",
     ]
     if previous_pack and tweak:
         lines.append(f"Previous options: {json.dumps(previous_pack.get('options'), ensure_ascii=False)}")

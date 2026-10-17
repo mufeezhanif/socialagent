@@ -9,91 +9,74 @@ import json
 from collections import Counter
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from app.config import settings
 from app.integrations import claude, llm
-from app.pipeline.cuts import keep_segments, map_span, normalize_word, output_duration
+from app.pipeline.cuts import FILLERS, keep_segments, map_span, normalize_word, output_duration
+from app.pipeline.genres import RECIPES, VIDEO_TYPES, classify, get_recipe, type_from_request
 from app.pipeline.storyboard import Storyboard, fallback_storyboard, removed_word_set, validate_storyboard
 from app.pipeline.styles import PRESETS, STYLE_ORDER
 
 log = logging.getLogger(__name__)
-MAX_STEPS = 10
+MAX_STEPS = 6
 MOTION_RE = re.compile(r"\b(motion|animat\w*|kinetic|brag)\b", re.IGNORECASE)
 
 INT, NUM, STR, BOOL = {"type": "integer"}, {"type": "number"}, {"type": "string"}, {"type": "boolean"}
 
 
-def _fn(name: str, description: str, properties: dict | None = None) -> dict:
+def _fn(name: str, description: str, properties: dict | None = None, required: list[str] | None = None) -> dict:
     props = properties or {}
     return {
         "type": "function",
         "function": {
             "name": name,
             "description": description,
-            "parameters": {"type": "object", "properties": props, "required": list(props)},
+            "parameters": {"type": "object", "properties": props,
+                           "required": list(props) if required is None else required},
         },
     }
 
 
+# Kept short on purpose: the tool list is sent with every turn, so each word here is paid for several times per edit.
 TOOLS = [
-    _fn("remove_words", "Cut a range of words: false starts, repeated takes, apologies, off-topic rambling. Indices "
-        "come from the numbered transcript and are inclusive. Filler words and long pauses are removed automatically.",
+    _fn("remove_words", "Cut words start..end (inclusive). Fillers and pauses are cut automatically.",
         {"start_word": INT, "end_word": INT, "reason": STR}),
-    _fn("restore_words", "Undo an earlier cut for a word range.", {"start_word": INT, "end_word": INT}),
-    _fn("trim", "Cut extra seconds from the very start and/or very end of the clip (0 leaves it as is).",
-        {"start_seconds": NUM, "end_seconds": NUM}),
-    _fn("set_style", "Visual style preset: " + "; ".join(f"{p.name} = {p.description}" for p in PRESETS.values()),
-        {"style": {"type": "string", "enum": STYLE_ORDER}}),
-    _fn("set_hook", "On-screen hook for the first 2.5 s: max 6 words, taken from what is said or shown, no invented "
-        "facts. Empty string removes it.", {"text": STR}),
-    _fn("set_end_card", "Closing card for the last 2 s: punchline (max 7 words) and optional call to action (only if "
-        "the user or brand kit gives one). Empty strings remove it.", {"punchline": STR, "cta": STR}),
-    _fn("highlight_words", "Words to emphasise in captions (numbers, key nouns, the promise). Replaces the previous "
-        "list. Max 8.", {"word_indices": {"type": "array", "items": INT}}),
-    _fn("add_emoji", "Pop an emoji on a word. Max 4 per video. Skip for serious or sensitive topics.",
-        {"word_index": INT, "emoji": STR}),
-    _fn("clear_emojis", "Remove all emoji pops."),
-    _fn("set_framing", "How to make the clip vertical 9:16. crop: follow one centred, steady subject. blur_pad: keep "
-        "the whole frame over a blurred backdrop (safe for groups, wide shots, on-screen text). auto: decide from face "
-        "detection.", {"mode": {"type": "string", "enum": ["auto", "crop", "blur_pad"]}}),
-    _fn("set_captions", "Word-by-word captions on or off, and where they sit.",
-        {"enabled": BOOL, "position": {"type": "string", "enum": ["lower", "middle", "upper"]}}),
-    _fn("set_music", "Soft music bed ducked under the voice. Good for promos and upbeat clips; skip for serious talks.",
-        {"enabled": BOOL}),
-    _fn("set_motion_graphics", "Animated motion layer (kinetic captions, zoom punches, emoji pops, end card). Takes "
-        "minutes to render: enable only when the user asked for motion or animation.", {"enabled": BOOL}),
-    _fn("preview_edit", "Check your work: returns the edited duration, current settings and the transcript that "
-        "remains after all cuts."),
-    _fn("ask_user", "Ask the creator one short question when something important is unclear. The edit still renders "
-        "and the question is sent with it.", {"question": STR}),
-    _fn("finish", "Call when the edit is complete. notes: 1-3 short sentences for the creator about judgement calls. "
-        "scene: one sentence describing what the video shows.",
-        {"notes": {"type": "array", "items": STR}, "scene": STR}),
+    _fn("restore_words", "Undo cuts in start..end.", {"start_word": INT, "end_word": INT}),
+    _fn("trim", "Seconds to cut from the very start / end (0 = none).", {"start_seconds": NUM, "end_seconds": NUM}),
+    _fn("set_look", "Video type picks music, sound effects and graphics: "
+        + "; ".join(f"{r.name}: {r.description}" for r in RECIPES.values())
+        + ". Style (optional): " + ", ".join(STYLE_ORDER) + ". Give only the fields you change.",
+        {"video_type": {"type": "string", "enum": VIDEO_TYPES}, "style": {"type": "string", "enum": STYLE_ORDER},
+         "music": BOOL, "framing": {"type": "string", "enum": ["auto", "crop", "blur_pad"]},
+         "captions": {"type": "string", "enum": ["lower", "middle", "upper", "off"]}, "motion": BOOL}, []),
+    _fn("set_text", "On-screen English text from what is said or shown. hook: first 2.5 s, max 6 words. punchline: "
+        "end card, max 7 words. cta: only if the user or brand gives one. Empty string removes.",
+        {"hook": STR, "punchline": STR, "cta": STR}, []),
+    _fn("emphasize", "Replace caption highlights (max 8 key words) and emoji pops (max 4, light topics only).",
+        {"words": {"type": "array", "items": INT},
+         "emoji": {"type": "array", "items": {"type": "object", "properties": {"word": INT, "emoji": STR},
+                                              "required": ["word", "emoji"]}}}, []),
+    _fn("preview_edit", "Edited length and the transcript left after cuts."),
+    _fn("finish", "Done. notes: 1-3 short notes for the creator. scene: one sentence on what the video shows. "
+        "question: only if something important is unclear.",
+        {"notes": {"type": "array", "items": STR}, "scene": STR, "question": STR}, ["notes", "scene"]),
 ]
 
-SYSTEM = """You are the AI video editor inside a WhatsApp assistant that turns creators' raw phone clips into \
-Instagram Reels (vertical 9:16). You edit by calling tools. Filler words, long pauses, audio cleanup, captions and the \
-9:16 reframe are handled automatically; you make the editorial decisions.
+SYSTEM = """You edit raw phone clips into Instagram Reels (9:16) by calling tools. Filler words, pauses, audio \
+cleanup, captions and reframing are automatic; you make the editorial calls.
 
-How to work:
-1. Read the numbered transcript and look at what the video shows.
-2. Cut false starts, repeated takes, apologies and off-topic rambling with remove_words. Keep the core message; never \
-cut more than needed.
-3. Unless the user picked a style, choose one that fits the content and brand. Set a hook from what is said or shown, \
-highlight the key words, add a few emoji only if the tone is light, choose framing, decide on music.
-4. Add an end card when there is a clear takeaway.
-5. Call preview_edit, check the remaining transcript still makes sense, fix anything wrong, then call finish.
+Finish in two turns:
+1. Make every decision at once: remove_words for false starts, repeated takes, apologies and off-topic parts (cut \
+whole sentences; never leave a fragment shorter than 2 s between cuts); set_look (video type; style only if the user \
+did not choose one); set_text; emphasize; then preview_edit.
+2. Fix anything wrong in the preview, then finish.
 
-Rules:
-- Never invent facts: no prices, dates, offers, names or claims that are not in the transcript, the user's notes or \
-the brand kit.
-- When change requests are given, apply them exactly and keep everything else as it was.
-- If something important is unclear, call ask_user once instead of guessing.
-- You may call several tools in one turn."""
+Rules: never invent facts (prices, dates, names, offers, claims) that are not in the transcript, the notes or the \
+brand kit. Spell names exactly as the user's notes do. Apply change requests exactly and keep everything else."""
 
 
 @dataclass
@@ -103,6 +86,7 @@ class EditorResult:
     editor: str  # gemini | groq | claude | rules
     trace: list[str]
     motion: bool
+    usage: dict = field(default_factory=dict)  # tokens the LLM editor used: calls, input, output
 
 
 def _words_text(words: list[dict], a: int, b: int, limit: int = 80) -> str:
@@ -110,8 +94,9 @@ def _words_text(words: list[dict], a: int, b: int, limit: int = 80) -> str:
 
 
 def initial_state(previous: dict | None, style: str, n_words: int, *, locked: bool, motion_allowed: bool,
-                  motion_on: bool, max_cut: float = 0.6) -> dict:
-    state = fallback_storyboard(style, n_words).model_dump()
+                  motion_on: bool, max_cut: float = 0.6, video_type: str = "vlog") -> dict:
+    state = fallback_storyboard(style, n_words, video_type).model_dump()
+    state["music"] = get_recipe(video_type).music is not None
     if previous:
         state.update({k: v for k, v in previous.items() if k in state})
         state["remove_ranges"] = list(previous.get("remove_ranges") or [])
@@ -310,27 +295,99 @@ def _apply_tool(state: dict, name: str, args: dict, words: list[dict], duration:
             return "error: only enable motion graphics when the user asks for motion or animation"
         state["_motion"] = enabled
         return f"ok: motion graphics {'on' if enabled else 'off'}"
+    if name == "set_look":
+        done: list[str] = []
+        if args.get("video_type"):
+            video_type = str(args["video_type"]).lower()
+            if video_type not in RECIPES:
+                return f"error: unknown video_type; use one of {', '.join(VIDEO_TYPES)}"
+            recipe = get_recipe(video_type)
+            state["video_type"] = video_type
+            if not state["_style_locked"]:
+                state["style"] = recipe.style
+            state["music"] = recipe.music is not None
+            done.append(f"ok: {video_type}")
+        for key, tool, tool_args in (
+            ("style", "set_style", {"style": args.get("style")}),
+            ("music", "set_music", {"enabled": args.get("music")}),
+            ("framing", "set_framing", {"mode": args.get("framing")}),
+            ("captions", "set_captions", {"enabled": args.get("captions") != "off",
+                                          "position": args.get("captions") or state["caption_position"]}),
+            ("motion", "set_motion_graphics", {"enabled": args.get("motion")}),
+        ):
+            if args.get(key) is not None:
+                done.append(_apply_tool(state, tool, tool_args, words, duration))
+        if not done:
+            return "error: give at least one field"
+        errors = [d for d in done if d.startswith("error")]
+        summary = ", ".join(d.split(": ", 1)[-1] for d in done if d.startswith("ok"))
+        return "; ".join(errors) + (f" (applied: {summary})" if summary else "") if errors else f"ok: {summary}"
+    if name == "set_text":
+        if "hook" in args:
+            state["hook_text"] = " ".join(str(args.get("hook") or "").split()[:6])[:40]
+        if "punchline" in args:
+            state["punchline_text"] = " ".join(str(args.get("punchline") or "").split()[:7])[:48]
+        if "cta" in args:
+            state["cta_text"] = " ".join(str(args.get("cta") or "").split()[:8])[:48]
+        return f'ok: hook "{state["hook_text"]}", end card "{state["punchline_text"]}" / "{state["cta_text"]}"'
+    if name == "emphasize":
+        notes: list[str] = []
+        if args.get("words") is not None:
+            notes.append(_apply_tool(state, "highlight_words", {"word_indices": args["words"]}, words, duration))
+        if args.get("emoji") is not None:
+            state["emoji_moments"] = []
+            for item in args["emoji"][:4]:
+                if isinstance(item, dict):
+                    notes.append(_apply_tool(state, "add_emoji", {"word_index": item.get("word"),
+                                                                  "emoji": item.get("emoji")}, words, duration))
+        return "; ".join(notes) or "error: give words and/or emoji"
     if name == "preview_edit":
         sb = to_storyboard(state, n, duration)
         removed = removed_word_set(sb)
         segments = keep_segments(words, duration, removed, trim_start=sb.trim_start_s, trim_end=sb.trim_end_s)
-        kept = [w["text"] for i, w in enumerate(words)
-                if i not in removed and map_span(w["start"], w["end"], segments) is not None]
-        return json.dumps({
-            "duration_in": round(duration, 1),
-            "duration_out": output_duration(segments),
-            "style": sb.style, "hook": sb.hook_text, "end_card": sb.punchline_text,
-            "captions": sb.captions_enabled, "framing": sb.crop_mode, "music": sb.music,
-            "remaining_transcript": " ".join(kept)[:1500],
-        })
+        kept, last = [], -2
+        for i, w in enumerate(words):
+            if i not in removed and map_span(w["start"], w["end"], segments) is not None:
+                kept.append(w["text"] if i == last + 1 else f"[{i}] {w['text']}")
+                last = i
+        preview = {"seconds": output_duration(segments), "of": round(duration, 1), "type": sb.video_type,
+                   "style": sb.style, "music": sb.music, "hook": sb.hook_text, "end": sb.punchline_text}
+        if state.get("_target"):
+            preview["target"] = f"{state['_target'] - 3:.0f}-{state['_target'] + 2:.0f}"
+        preview["kept"] = " ".join(kept)[:1200]
+        return json.dumps(preview, ensure_ascii=False)
     if name == "ask_user":
         state["question_for_user"] = str(args.get("question", ""))[:200]
         return "ok: question will be sent with the preview"
     if name == "finish":
         state["edit_notes"] = [str(x)[:120] for x in (args.get("notes") or [])][:3]
         state["scene_description"] = str(args.get("scene", ""))[:400]
+        if args.get("question"):
+            state["question_for_user"] = str(args["question"])[:200]
         return "ok: finished"
     return f"error: unknown tool {name}"
+
+
+def drop_orphans(state: dict, words: list[dict], duration: float) -> list[str]:
+    """Remove short leftovers stranded between two cuts ("This a pure definition of"): they read as glitches."""
+    removed = removed_word_set(to_storyboard(state, len(words), duration))
+    trace, i = [], 0
+    while i < len(words):
+        if i in removed or i == 0 or (i - 1) not in removed:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(words) and j + 1 not in removed:
+            j += 1
+        if j + 1 < len(words):  # a kept run with cuts on both sides
+            spoken = [w for w in words[i : j + 1] if normalize_word(w["text"]) not in FILLERS]
+            if len(spoken) <= 4 and words[j]["end"] - words[i]["start"] < 1.6:
+                args = {"start_word": i, "end_word": j, "reason": "stranded fragment"}
+                result = apply_tool(state, "remove_words", args, words, duration)
+                if result.startswith("ok"):
+                    trace.append(_trace_line("remove_words", args, result))
+        i = j + 1
+    return trace
 
 
 def _trace_line(name: str, args: dict | None, result: str) -> str:
@@ -340,6 +397,7 @@ def _trace_line(name: str, args: dict | None, result: str) -> str:
 
 # ------------------------------------------------------------------ rule-based fallback (no LLM)
 
+_TYPE_ASK_RE = re.compile(r"\b(?:make it|more|less|vibe|feel|mood|tone|turn it into|it's an?|this is an?)\b(.{0,40})")
 _STYLE_RE = re.compile(r"\b(" + "|".join(STYLE_ORDER) + r")\b")
 _PHRASE_RE = re.compile(
     r"(?:cut|remove|delete|drop)(?: out)?(?: the)?(?: part| bit| section| line)?(?: where| when)? "
@@ -352,9 +410,17 @@ RESTART_MARKERS = ("let me start again", "let me start over", "start again", "st
 
 
 def sentences(words: list[dict]) -> list[tuple[int, int]]:
+    """Sentence spans by punctuation. Unpunctuated speech (common in Urdu/Hindi transcripts) splits on pauses and
+    every 15 words instead, so it never becomes one giant sentence."""
+    punctuated = sum(w["text"].endswith((".", "!", "?")) for w in words) >= len(words) / 40
     spans, start = [], 0
     for i, w in enumerate(words):
-        if w["text"].endswith((".", "!", "?")) or i == len(words) - 1:
+        last = i == len(words) - 1
+        if punctuated:
+            end = w["text"].endswith((".", "!", "?"))
+        else:
+            end = i - start + 1 >= 15 or (not last and words[i + 1]["start"] - w["end"] >= 0.6)
+        if end or last:
             spans.append((start, i))
             start = i + 1
     return spans
@@ -439,6 +505,8 @@ def apply_rules(state: dict, notes: list[str], words: list[dict], duration: floa
             run("set_music", enabled=True)
         if MOTION_RE.search(t):
             run("set_motion_graphics", enabled=True)
+        if (m := _TYPE_ASK_RE.search(t)) and (video_type := type_from_request(m.group(1))):
+            run("set_look", video_type=video_type)
         if re.search(r"\b(no|remove|without)( the)? (emoji|emojis)\b", t):
             run("clear_emojis")
         if re.search(r"\b(no|remove|without)( the)? end ?card\b", t):
@@ -456,38 +524,60 @@ def apply_rules(state: dict, notes: list[str], words: list[dict], duration: floa
 
 
 def _prompt(*, words, probe, face_x, brand, user_context, style_request, motion_allowed, change_requests,
-            previous, target=None, language=None) -> str:
+            previous, target=None, language=None, units=None, guess=None) -> str:
     duration = float(probe["duration"])
     orientation = "landscape" if probe["width"] > probe["height"] else "vertical"
-    face = f"one steady face at x={face_x:.2f} (0=left, 1=right)" if face_x is not None else "no single steady face"
-    lines = [
-        f"Clip: {duration:.1f} s, {probe['width']}x{probe['height']} {orientation}, audio: {'yes' if probe['has_audio'] else 'no'}.",
-        f"Speech language: {language or 'unknown'}. Captions are shown in English; write the hook and end card in English.",
-        f"Face detection: {face}.",
-        f"Brand kit: {json.dumps(brand, ensure_ascii=False)}",
-        f"User's notes about this video: {user_context or '(none)'}",
-        f"Style: {'the user asked for ' + style_request if style_request else 'your choice'}.",
-        f"Motion graphics: {'allowed (the user asked for it)' if motion_allowed else 'not requested'}.",
-    ]
+    clip = (f"Clip: {duration:.1f}s {probe['width']}x{probe['height']} {orientation}, "
+            f"{'audio' if probe['has_audio'] else 'no audio'}, speech: {language or 'unknown'}")
+    if language and language != "en":
+        clip += " (captions are shown in English: write all text in English)"
+    clip += f", face: {f'one steady face at x={face_x:.2f}' if face_x is not None else 'no steady face'}."
+    lines = [clip]
+    kit = {k: v for k, v in (brand or {}).items() if v and k not in ("accent_color", "default_style")}
+    if kit:
+        lines.append(f"Brand kit: {json.dumps(kit, ensure_ascii=False)}")
+    if user_context:
+        lines.append(f"User's notes: {user_context}")
+    if style_request:
+        lines.append(f"Style: the user chose {style_request}; keep it.")
+    if motion_allowed:
+        lines.append("Motion graphics: the user asked for them.")
+    if guess and not previous:
+        lines.append(f"Keyword guess for video_type: {guess} (decide yourself).")
     if target:
-        lines.append(f"Target length: about {target:.0f} s (the user asked). Keep the strongest moments: the opening "
-                     f"context, the main point and the closing. Remove the weakest parts with remove_words and use "
-                     f"preview_edit until duration_out is within {target - 3:.0f}-{target + 2:.0f} s.")
+        lines.append(f"Target length: about {target:.0f}s (the user asked). Keep the opening, the main point and the "
+                     f"close; cut the weakest parts until preview seconds is {target - 3:.0f}-{target + 2:.0f}.")
     if previous:
-        keep = {k: previous.get(k) for k in ("style", "hook_text", "punchline_text", "cta_text", "remove_ranges",
-                                            "highlight_word_indices", "emoji_moments", "crop_mode", "captions_enabled",
-                                            "caption_position", "music", "trim_start_s", "trim_end_s")}
-        lines.append(f"Current edit (revise it, keep what isn't asked to change): {json.dumps(keep, ensure_ascii=False)}")
+        keep = {k: previous.get(k) for k in ("video_type", "style", "hook_text", "punchline_text", "cta_text",
+                                            "remove_ranges", "highlight_word_indices", "emoji_moments", "crop_mode",
+                                            "captions_enabled", "caption_position", "music", "trim_start_s",
+                                            "trim_end_s") if previous.get(k) not in (None, "", [])}
+        if keep.get("remove_ranges"):  # [start, end] pairs: the reasons only cost tokens here
+            keep["remove_ranges"] = [[r["start_word"], r["end_word"]] for r in keep["remove_ranges"]]
+        lines.append(f"Current edit (change only what is asked): {json.dumps(keep, ensure_ascii=False)}")
     if change_requests:
-        lines.append("Change requests from the user, oldest first: " + json.dumps(change_requests, ensure_ascii=False))
-    transcript = " ".join(f"{i}:{w['text']}@{w['start']:.1f}" for i, w in enumerate(words)) or "(no speech detected)"
-    lines.append("Transcript (index:word@seconds):\n" + transcript)
+        lines.append("Change requests, oldest first: " + json.dumps(change_requests, ensure_ascii=False))
+    lines.append("Transcript, one line per phrase: [start seconds] then word index and word; ? marks unclear audio.")
+    lines.append(transcript_lines(words, units or units_for(words, None)) or "(no speech detected)")
+    return "\n".join(lines)
+
+
+def transcript_lines(words: list[dict], units: list[dict]) -> str:
+    """Compact numbered transcript: about 2.5 tokens a word instead of ~10 for "i:word@seconds"."""
+    starts = {u["first_word"]: u for u in units}
+    lines: list[str] = []
+    for i, w in enumerate(words):
+        if i in starts or not lines:
+            unit = starts.get(i)
+            lines.append(f"[{w['start']:.1f}{'?' if unit and unclear(unit) else ''}]")
+        lines[-1] += f" {i} {w['text']}"
     return "\n".join(lines)
 
 
 def _echo(message: dict) -> dict:
-    """Assistant message as it must be sent back (keeps provider extras such as Gemini thought signatures)."""
-    out = {k: v for k, v in message.items() if not k.startswith("_")}
+    """Assistant message as it must be sent back (keeps provider extras such as Gemini thought signatures, drops the
+    reasoning text, which would otherwise be re-sent and paid for on every later turn)."""
+    out = {k: v for k, v in message.items() if not k.startswith("_") and k not in ("reasoning", "reasoning_content")}
     out["role"] = "assistant"
     if out.get("content") is None and not out.get("tool_calls"):
         out["content"] = ""
@@ -495,18 +585,20 @@ def _echo(message: dict) -> dict:
 
 
 async def _agent(provider: llm.Provider, state: dict, frames: list[Path], prompt: str, words: list[dict],
-                 duration: float) -> list[str]:
+                 duration: float, usage: dict | None = None) -> list[str]:
+    usage = usage if usage is not None else {}
     content: list[dict] = [{"type": "text", "text": prompt}]
     if provider.max_images:
-        content += [llm.image_part(f) for f in frames[: provider.max_images]]
+        content += [llm.image_part(f) for f in _spread(frames, provider.max_images)]
     elif provider.vision_model and frames:
-        visual = await llm.describe_frames(provider, frames)
+        visual = await llm.describe_frames(provider, frames, usage)
         if visual:
             content[0]["text"] += f"\n\nWhat the frames show: {visual}"
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": content}]
     trace: list[str] = []
     for _ in range(MAX_STEPS):
         reply = await llm.chat(provider, messages, tools=TOOLS, max_tokens=4000)
+        llm.add_usage(usage, reply)
         calls = reply.get("tool_calls") or []
         messages.append(_echo(reply))
         if not calls:
@@ -532,6 +624,13 @@ async def _agent(provider: llm.Provider, state: dict, frames: list[Path], prompt
     return trace
 
 
+def _spread(frames: list[Path], count: int) -> list[Path]:
+    """`count` frames spread over the clip (the first few would all show the opening)."""
+    if len(frames) <= count:
+        return frames
+    return [frames[round(i * (len(frames) - 1) / max(count - 1, 1))] for i in range(count)]
+
+
 async def run_editor(
     *,
     frames: list[Path],
@@ -549,7 +648,9 @@ async def run_editor(
     language: str | None = None,
 ) -> EditorResult:
     duration = float(probe["duration"])
-    style = style_request or (previous or {}).get("style") or brand.get("default_style") or "clean"
+    guess = (previous or {}).get("video_type") or classify(words, user_context, brand)
+    brand_style = brand.get("default_style") if brand.get("default_style") not in (None, "", "clean") else None
+    style = style_request or (previous or {}).get("style") or brand_style or get_recipe(guess).style
     motion_allowed = motion_requested or any(MOTION_RE.search(n) for n in change_requests)
     motion_on = motion_requested or bool((previous or {}).get("motion"))
     target = target_seconds or parse_target([user_context or "", *change_requests])
@@ -558,24 +659,32 @@ async def run_editor(
     units = units_for(words, segments)
 
     def fresh(base: dict | None = None) -> dict:
-        return initial_state(base if base is not None else previous, style, len(words), locked=bool(style_request),
-                             motion_allowed=motion_allowed, motion_on=motion_on, max_cut=0.85 if target else 0.6)
+        state = initial_state(base if base is not None else previous, style, len(words), locked=bool(style_request),
+                              motion_allowed=motion_allowed, motion_on=motion_on, max_cut=0.85 if target else 0.6,
+                              video_type=guess)
+        state["_target"] = target
+        return state
 
-    def finish(state: dict, from_ai: bool, editor: str, trace: list[str]) -> EditorResult:
+    def finish(state: dict, from_ai: bool, editor: str, trace: list[str], usage: dict | None = None) -> EditorResult:
+        trace = trace + drop_orphans(state, words, duration)
         if target:  # safety net: whoever edited, the result honours the requested length
             trace = trace + fit_to_target(state, words, units, duration, target)
-        return EditorResult(to_storyboard(state, len(words), duration), from_ai, editor, trace, state["_motion"])
+        if usage and (usage.get("input") or usage.get("output")):
+            trace.append(f"tokens: {usage['input']} in + {usage['output']} out over {usage['calls']} calls")
+            log.info("editor %s used %s", editor, usage)
+        return EditorResult(to_storyboard(state, len(words), duration), from_ai, editor, trace, state["_motion"],
+                            usage or {})
 
     prompt = _prompt(words=words, probe=probe, face_x=face_x, brand=brand, user_context=user_context,
                      style_request=style_request, motion_allowed=motion_allowed, change_requests=change_requests,
-                     previous=previous, target=target, language=language)
+                     previous=previous, target=target, language=language, units=units, guess=guess)
     for provider in llm.providers():
-        state = fresh()
+        state, usage = fresh(), {}
         try:
-            trace = await _agent(provider, state, frames, prompt, words, duration)
-            return finish(state, True, provider.name, trace)
+            trace = await _agent(provider, state, frames, prompt, words, duration, usage)
+            return finish(state, True, provider.name, trace, usage)
         except (llm.LLMError, ValidationError, ValueError) as exc:
-            log.warning("editor agent via %s failed: %s", provider.name, str(exc)[:300])
+            log.warning("editor agent via %s (%s) failed: %s", provider.name, provider.model, str(exc)[:300])
 
     if claude.enabled() and "anthropic" in settings.llm_providers:
         from app.pipeline.director import direct
@@ -588,5 +697,7 @@ async def run_editor(
 
     state = fresh()
     trace = [] if previous else auto_rules(state, words, duration, units)
+    if not previous:
+        trace.append(f"video type: {guess} (keywords)")
     trace += apply_rules(state, change_requests[-1:] if previous else change_requests, words, duration)
     return finish(state, False, "rules", trace)

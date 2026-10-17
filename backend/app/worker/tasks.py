@@ -4,11 +4,13 @@ import logging
 import time
 from pathlib import Path
 
+from sqlalchemy import select
+
 from app.agent import copy
 from app.agent.engine import Ctx, InboundEvent, brand_dict, draft_dir, get_brand, handle_inbound
 from app.config import settings
 from app.db import SessionLocal
-from app.models import Draft, DraftStatus as S, Job, User, utcnow
+from app.models import Draft, DraftStatus as S, InstagramAccount, Job, User, utcnow
 from app.pipeline.edit import EditInput, EditOutput, run_edit
 from app.pipeline.probe import probe
 from app.pipeline.render_hyperframes import hyperframes_available
@@ -26,6 +28,9 @@ async def _load(draft_id: str) -> tuple[Draft, User, dict] | None:
             return None
         user = await session.get(User, draft.user_id)
         brand = brand_dict(await get_brand(session, draft.user_id))
+        handle = await session.scalar(select(InstagramAccount.username).where(InstagramAccount.user_id == draft.user_id))
+        if handle:
+            brand["handle"] = handle  # shown on brand name tags and end cards
         await session.commit()
         return draft, user, brand
 

@@ -9,13 +9,14 @@ from app.integrations import llm
 from app.pipeline.cuts import keep_segments, output_duration
 from app.pipeline.editor_agent import run_editor
 from app.pipeline.faces import face_center
+from app.pipeline.genres import LOOK_SUMMARY, MUSIC_LABEL, Recipe, cut_points, find_track, get_recipe, plan_sfx, sfx_file
 from app.pipeline.frames import sample_frames
 from app.pipeline.probe import ProbeInfo, probe as probe_file
 from app.pipeline.render_ffmpeg import RenderPlan, choose_reframe, finalize, render
 from app.pipeline.render_hyperframes import build_data, hyperframes_available, render_motion
 from app.pipeline.storyboard import Storyboard, removed_word_set
 from app.pipeline.styles import StylePreset, get_preset
-from app.pipeline.subtitles import build_ass
+from app.pipeline.subtitles import build_ass, map_words
 from app.pipeline.transcribe import transcribe, translate
 
 log = logging.getLogger(__name__)
@@ -68,12 +69,28 @@ def vocabulary_hint(user_context: str | None, brand: dict) -> str | None:
 
 
 def find_music(style: str) -> Path | None:
-    """Music bed for the style (assets/music/<style>.mp3). Calm styles have none on purpose."""
-    music_dir = Path(settings.assets_dir) / "music"
-    for candidate in sorted(music_dir.glob(f"{style}.*")) if music_dir.is_dir() else []:
-        if candidate.suffix.lower() in {".mp3", ".m4a", ".wav", ".ogg"}:
-            return candidate
-    return None
+    """Music bed for the style (assets/music/<style>.mp3)."""
+    return find_track(style)
+
+
+def pick_music(recipe: Recipe, style: str) -> Path | None:
+    """The video type's track (emotional piano for a heartfelt clip), unless the user chose a different style."""
+    if style != recipe.style:
+        return find_music(style) or find_track(recipe.music)
+    return find_track(recipe.music) or find_music(style)
+
+
+def plan_sounds(recipe: Recipe, sb: Storyboard, words: list[dict], segments: list, removed: set[int],
+                highlight_times: list[float], out_duration: float, emojis: bool) -> list[tuple[float, Path, float]]:
+    """Sound effects for the recipe on the edited timeline, as (seconds, file, volume)."""
+    emoji_times: list[float] = []
+    if emojis:
+        placed = {w["i"]: w["start"] for w in map_words(words, segments, removed)}
+        emoji_times = [placed[m.word_index] for m in sb.emoji_moments if m.word_index in placed]
+    punch_start = out_duration - 2.2 if sb.punchline_text and out_duration > 4 else None
+    events = plan_sfx(recipe, cuts=cut_points(segments, out_duration), highlights=highlight_times, emojis=emoji_times,
+                      out_duration=out_duration, hook=bool(sb.hook_text), punch_start=punch_start)
+    return [(t, path, volume) for t, name, volume in events if (path := sfx_file(name))]
 
 
 def make_summary(
@@ -85,6 +102,8 @@ def make_summary(
     has_audio: bool,
     captions: bool,
     music_used: bool,
+    recipe: Recipe | None = None,
+    music_name: str = "",
 ) -> list[str]:
     bullets: list[str] = []
     cut = duration_in - duration_out
@@ -105,8 +124,11 @@ def make_summary(
         bullets.append(f'End card: "{sb.punchline_text}"')
     if has_audio:
         bullets.append("Cleaned and levelled audio")
+    if recipe:
+        bullets.append(f"Edited as {'an' if recipe.name[0] in 'aeiou' else 'a'} {recipe.name} video: "
+                       f"{LOOK_SUMMARY.get(recipe.name, 'clean look')}")
     if music_used:
-        bullets.append("Soft music bed under your voice")
+        bullets.append(f"{MUSIC_LABEL.get(music_name, 'Soft')} music bed under your voice")
     bullets.append(f"Style: {preset.label} ({preset.description})")
     bullets += sb.edit_notes[:2]
     return bullets
@@ -143,6 +165,8 @@ async def run_edit(inp: EditInput) -> EditOutput:
     segments = keep_segments(words, probe.duration, removed, trim_start=sb.trim_start_s, trim_end=sb.trim_end_s)
     out_duration = output_duration(segments)
     preset = get_preset(sb.style)
+    recipe = get_recipe(sb.video_type)
+    cuts = cut_points(segments, out_duration)
     reframe = choose_reframe(probe, sb.crop_mode, face_x)
     accent = inp.brand.get("accent_color")
     accent = accent if accent and accent.upper() != DEFAULT_ACCENT else None
@@ -172,13 +196,18 @@ async def run_edit(inp: EditInput) -> EditOutput:
         cta_text=sb.cta_text,
         highlight_indices=caption_hl,
         accent=accent,
+        recipe=recipe,
+        flash_times=cuts,
+        handle=inp.brand.get("handle") or "",
     )
     ass_file = None
     if ass_text:
         ass_file = inp.workdir / "captions.ass"
         ass_file.write_text(ass_text, encoding="utf-8")
 
-    music = find_music(sb.style) if sb.music else None
+    music = pick_music(recipe, sb.style) if sb.music else None
+    highlight_times = [w["start"] for w in map_words(caption_words, segments, caption_removed) if w["i"] in caption_hl]
+    sfx = plan_sounds(recipe, sb, words, segments, removed, highlight_times, out_duration, emojis=False)
     plan = RenderPlan(
         segments=segments,
         preset=preset,
@@ -187,12 +216,21 @@ async def run_edit(inp: EditInput) -> EditOutput:
         ass_file=ass_file,
         music_file=music,
         out_duration=out_duration,
+        music_volume=recipe.music_volume,
+        sfx=sfx,
+        letterbox=recipe.letterbox,
+        grain=recipe.grain,
+        fades=recipe.fades,
+        drift=recipe.drift,
     )
     fonts = Path(settings.assets_dir) / "fonts"
     used_motion = False
     if want_motion and hyperframes_available():
         try:
-            base = await render(inp.src, probe, replace(plan, ass_file=None), inp.workdir, fonts, out_name="base.mp4")
+            motion_sfx = plan_sounds(recipe, sb, words, segments, removed, highlight_times, out_duration,
+                                     emojis=caption_words is words)  # emoji pops are drawn by the motion layer
+            base = await render(inp.src, probe, replace(plan, ass_file=None, sfx=motion_sfx), inp.workdir, fonts,
+                                out_name="base.mp4")
             motion_sb = {**sb.model_dump(), "highlight_word_indices": sorted(caption_hl), "emoji_moments": []
                          if caption_words is not words else sb.model_dump()["emoji_moments"]}
             data = build_data(
@@ -208,7 +246,8 @@ async def run_edit(inp: EditInput) -> EditOutput:
     outputs = await finalize(master, out_duration, inp.workdir)
 
     summary = make_summary(
-        probe.duration, out_duration, sb, reframe, preset, probe.has_audio, bool(sb.captions_enabled and words), music is not None
+        probe.duration, out_duration, sb, reframe, preset, probe.has_audio, bool(sb.captions_enabled and words),
+        music is not None, recipe, music.stem if music else "",
     )
     if caption_words is not words:
         summary.insert(-1, f"English captions (translated from {language})")

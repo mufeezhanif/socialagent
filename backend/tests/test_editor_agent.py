@@ -35,7 +35,7 @@ def test_tools_edit_the_storyboard():
     assert apply_tool(s, "add_emoji", {"word_index": 8, "emoji": "fire"}, WORDS, 10).startswith("error")
     apply_tool(s, "set_style", {"style": "hype"}, WORDS, 10)
     preview = json.loads(apply_tool(s, "preview_edit", {}, WORDS, 10))
-    assert "Sorry" not in preview["remaining_transcript"] and "Three" in preview["remaining_transcript"]
+    assert "Sorry" not in preview["kept"] and "Three" in preview["kept"]
     sb = to_storyboard(s, len(WORDS), 10)
     assert sb.style == "hype" and len(sb.hook_text.split()) <= 6 and sb.highlight_word_indices == [7, 8]
     assert sb.emoji_moments[0].emoji == "🔥"

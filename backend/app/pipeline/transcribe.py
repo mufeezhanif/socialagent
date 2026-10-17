@@ -97,6 +97,19 @@ def _groq_enabled() -> bool:
     return bool(settings.groq_api_key)
 
 
+_LANG_CODES = {"english": "en", "urdu": "ur", "hindi": "hi", "punjabi": "pa", "arabic": "ar", "persian": "fa",
+               "pashto": "ps", "sindhi": "sd", "bengali": "bn", "turkish": "tr", "spanish": "es", "french": "fr",
+               "german": "de", "portuguese": "pt", "italian": "it", "russian": "ru", "chinese": "zh",
+               "japanese": "ja", "korean": "ko", "indonesian": "id", "malay": "ms"}
+
+
+def _lang_code(name: str | None) -> str | None:
+    """Groq reports language names ("English"); local Whisper and the rest of the pipeline use ISO codes ("en")."""
+    if not name:
+        return None
+    return _LANG_CODES.get(name.strip().lower(), name.strip().lower())
+
+
 def _words_from_segments(payload: dict) -> tuple[list[dict], list[dict]]:
     """Groq verbose_json -> our words + segments. Without word timestamps, spread words across each segment."""
     raw_words = [w for w in payload.get("words") or [] if str(w.get("word", "")).strip()]
@@ -138,12 +151,9 @@ async def _groq_audio(path: str, endpoint: str, model: str, prompt: str | None =
         )
         if result.returncode != 0:
             return dict(EMPTY)  # no audio track
-        data = {
-            "model": model,
-            "response_format": "verbose_json",
-            "timestamp_granularities[]": ["word", "segment"],
-            "temperature": "0",
-        }
+        data = {"model": model, "response_format": "verbose_json", "temperature": "0"}
+        if endpoint == "transcriptions":  # translations reject timestamp_granularities (segments only)
+            data["timestamp_granularities[]"] = ["word", "segment"]
         if prompt:
             data["prompt"] = prompt[:600]
         try:
@@ -163,7 +173,7 @@ async def _groq_audio(path: str, endpoint: str, model: str, prompt: str | None =
         return None
     payload = response.json()
     words, segs = _words_from_segments(payload)
-    return {"language": payload.get("language"), "words": words, "segments": segs,
+    return {"language": _lang_code(payload.get("language")), "words": words, "segments": segs,
             "text": " ".join(w["text"] for w in words), "engine": "groq"}
 
 

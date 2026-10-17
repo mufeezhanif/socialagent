@@ -1,10 +1,12 @@
-"""One FFmpeg pass: cut + zoom alternation + 9:16 reframe + grade + captions + cleaned/levelled audio (+ music bed)."""
+"""One FFmpeg pass: cut + zoom alternation + 9:16 reframe + grade + look (drift, grain, letterbox, fades) + captions
++ cleaned/levelled audio (+ music bed and sound effects)."""
 
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.pipeline.cuts import Segment
+from app.pipeline.genres import LETTERBOX_PX
 from app.pipeline.probe import ProbeInfo
 from app.pipeline.proc import run
 from app.pipeline.styles import StylePreset
@@ -22,6 +24,12 @@ class RenderPlan:
     ass_file: Path | None
     music_file: Path | None
     out_duration: float
+    music_volume: float = 0.22
+    sfx: list[tuple[float, Path, float]] = field(default_factory=list)  # (output seconds, file, volume)
+    letterbox: bool = False
+    grain: bool = False
+    fades: bool = False
+    drift: bool = False  # slow handheld-style float
 
 
 def _even(value: float) -> int:
@@ -37,7 +45,33 @@ def choose_reframe(probe: ProbeInfo, crop_mode: str, focus_x: float | None) -> s
     return "blur_pad"
 
 
-def build_filtergraph(probe: ProbeInfo, plan: RenderPlan, music_input: int | None, silence_input: int | None) -> str:
+def look_filters(plan: RenderPlan) -> list[str]:
+    """Video filters after the reframe, in order: drift, grade, grain, letterbox (captions go on top later)."""
+    out: list[str] = []
+    if plan.drift:
+        out.append(f"scale={_even(OUT_W * 1.08)}:{_even(OUT_H * 1.08)},"
+                   f"crop={OUT_W}:{OUT_H}:x='(iw-ow)/2*(1+0.8*sin(2*PI*t/11))':y='(ih-oh)/2*(1+0.8*cos(2*PI*t/13))'")
+    if plan.preset.grade:
+        out.append(plan.preset.grade)
+    if plan.grain:
+        out.append("noise=c0s=7:c0f=t+u")  # luma-only uniform grain: far cheaper than colour noise
+    if plan.letterbox:
+        bar = LETTERBOX_PX
+        out.append(f"drawbox=x=0:y=0:w=iw:h={bar}:color=black:t=fill,drawbox=x=0:y=ih-{bar}:w=iw:h={bar}:color=black:t=fill")
+    return out
+
+
+def _fade_filters(plan: RenderPlan, audio: bool) -> str:
+    if not plan.fades or plan.out_duration < 3:
+        return ""
+    end = plan.out_duration
+    if audio:
+        return f",afade=t=in:d=0.3,afade=t=out:st={end - 0.7:.3f}:d=0.7"
+    return f",fade=t=in:st=0:d=0.4,fade=t=out:st={end - 0.6:.3f}:d=0.6"
+
+
+def build_filtergraph(probe: ProbeInfo, plan: RenderPlan, music_input: int | None, silence_input: int | None,
+                      sfx_inputs: list[int] | None = None) -> str:
     n = len(plan.segments)
     W, H = _even(probe.width), _even(probe.height)
     fx = plan.focus_x if plan.focus_x is not None else 0.5
@@ -79,30 +113,43 @@ def build_filtergraph(probe: ProbeInfo, plan: RenderPlan, music_input: int | Non
             "[bg][fg]overlay=(W-w)/2:(H-h)/2[vr]"
         )
 
-    post = [plan.preset.grade] if plan.preset.grade else []
+    post = look_filters(plan)
     if plan.ass_file:
         post.append(f"ass={plan.ass_file.name}:fontsdir=fonts")
     post += ["fps=30", "format=yuv420p"]
-    parts.append("[vr]" + ",".join(post) + "[vout]")
+    parts.append("[vr]" + ",".join(post) + _fade_filters(plan, audio=False) + "[vout]")
 
     total = plan.out_duration
     loudnorm = "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000"
     if probe.has_audio:
         parts.append("[ac]highpass=f=80,afftdn=nf=-25,acompressor=threshold=0.125:ratio=3:attack=5:release=150:makeup=2[voice]")
+        base = "voice"
         if music_input is not None:
             parts.append(
                 "[voice]asplit[vmix][vkey];"
-                f"[{music_input}:a]aresample=48000,volume=0.22[mus];"
+                f"[{music_input}:a]aresample=48000,volume={plan.music_volume:.3f}[mus];"
                 "[mus][vkey]sidechaincompress=threshold=0.04:ratio=10:attack=15:release=350[duck];"
-                "[vmix][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix];"
-                f"[mix]{loudnorm}[aout]"
+                "[vmix][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mix]"
             )
-        else:
-            parts.append(f"[voice]{loudnorm}[aout]")
+            base = "mix"
     elif music_input is not None:
-        parts.append(f"[{music_input}:a]aresample=48000,volume=0.6,atrim=duration={total},asetpts=PTS-STARTPTS[aout]")
+        parts.append(f"[{music_input}:a]aresample=48000,volume=0.6,atrim=duration={total},asetpts=PTS-STARTPTS[bed]")
+        base = "bed"
     else:
-        parts.append(f"[{silence_input}:a]atrim=duration={total},asetpts=PTS-STARTPTS[aout]")
+        parts.append(f"[{silence_input}:a]atrim=duration={total},asetpts=PTS-STARTPTS[bed]")
+        base = "bed"
+    if sfx_inputs:
+        labels = ""
+        for k, ((at, _, volume), index) in enumerate(zip(plan.sfx, sfx_inputs)):
+            ms = int(at * 1000)
+            parts.append(f"[{index}:a]aresample=48000,aformat=channel_layouts=stereo,volume={volume:.2f},"
+                         f"adelay={ms}|{ms}[fx{k}]")
+            labels += f"[fx{k}]"
+        parts.append(f"[{base}]{labels}amix=inputs={len(sfx_inputs) + 1}:duration=first:dropout_transition=0:"
+                     "normalize=0[withfx]")
+        base = "withfx"
+    level = loudnorm if probe.has_audio else "anull"
+    parts.append(f"[{base}]{level}{_fade_filters(plan, audio=True)}[aout]")
     return ";".join(parts)
 
 
@@ -124,10 +171,15 @@ async def render(
         music_input, next_input = next_input, next_input + 1
     if not probe.has_audio and music_input is None:
         cmd += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-        silence_input = next_input
+        silence_input, next_input = next_input, next_input + 1
+    sfx_inputs = []
+    for _, sound, _ in plan.sfx:
+        cmd += ["-i", str(Path(sound).resolve())]
+        sfx_inputs.append(next_input)
+        next_input += 1
 
     master = workdir / out_name
-    graph = build_filtergraph(probe, plan, music_input, silence_input)
+    graph = build_filtergraph(probe, plan, music_input, silence_input, sfx_inputs)
     cmd += [
         "-filter_complex", graph, "-map", "[vout]", "-map", "[aout]",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-profile:v", "high", "-pix_fmt", "yuv420p",

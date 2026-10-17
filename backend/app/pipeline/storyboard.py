@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.pipeline.styles import PRESETS
 
 Style = Literal["clean", "hype", "cinematic", "funny", "deadpan", "luxury"]
+VideoType = Literal["vlog", "energetic", "emotional", "brand", "tutorial", "funny"]
 
 
 class RemoveRange(BaseModel):
@@ -22,6 +23,7 @@ class EmojiMoment(BaseModel):
 
 class Storyboard(BaseModel):
     style: Style
+    video_type: VideoType = Field("vlog", description="Kind of video; picks the music, sound effects and graphics")
     hook_text: str = Field(description="On-screen hook for the first ~2.5 s, max 6 words, empty for none")
     remove_ranges: list[RemoveRange] = Field(description="Word ranges to cut: false starts, repeats, apologies, off-topic")
     highlight_word_indices: list[int] = Field(description="Up to 8 word indices to emphasise in captions")
@@ -83,9 +85,10 @@ def validate_storyboard(sb: Storyboard, n_words: int, duration: float, max_cut: 
     return Storyboard.model_validate(data)
 
 
-def fallback_storyboard(style: str, n_words: int) -> Storyboard:
+def fallback_storyboard(style: str, n_words: int, video_type: str = "vlog") -> Storyboard:
     return Storyboard(
         style=style if style in PRESETS else "clean",
+        video_type=video_type,
         hook_text="",
         remove_ranges=[],
         highlight_word_indices=[],
