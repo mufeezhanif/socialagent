@@ -9,9 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.engine import get_brand
 from app.db import get_session
 from app.deps import current_user
-from app.models import User
+from app.models import TasteMemory, User, utcnow
 from app.pipeline.styles import STYLE_ORDER
 from app.services.captions import clean_tag
+from app.services.taste import MAX_LINE, MAX_NOTES
 
 router = APIRouter(prefix="/api/brand", tags=["brand"])
 HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -81,3 +82,48 @@ async def update_brand(body: BrandBody, user: User = Depends(current_user), sess
     db_user.timezone = body.timezone
     await session.commit()
     return _payload(brand, db_user)
+
+
+class TasteBody(BaseModel):
+    notes: list[str]
+
+
+async def _taste_payload(session: AsyncSession, user_id: str) -> dict:
+    memory = await session.get(TasteMemory, user_id)
+    return {
+        "notes": list(memory.notes or []) if memory else [],
+        "updated_at": memory.updated_at.isoformat() if memory else None,
+        "signals_seen": memory.signals_seen if memory else 0,
+    }
+
+
+@router.get("/taste")
+async def read_taste(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    return await _taste_payload(session, user.id)
+
+
+@router.put("/taste")
+async def update_taste(body: TasteBody, user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    notes = [n.strip() for n in body.notes]
+    if any(not n for n in notes):
+        raise HTTPException(400, "Preferences can't be empty")
+    if len(notes) > MAX_NOTES:
+        raise HTTPException(400, f"Keep it to {MAX_NOTES} preferences")
+    if any(len(n) > MAX_LINE for n in notes):
+        raise HTTPException(400, f"Each preference must be {MAX_LINE} characters or fewer")
+    memory = await session.get(TasteMemory, user.id)
+    if memory is None:
+        memory = TasteMemory(user_id=user.id)
+        session.add(memory)
+    memory.notes, memory.updated_at = notes, utcnow()
+    await session.commit()
+    return await _taste_payload(session, user.id)
+
+
+@router.delete("/taste")
+async def clear_taste(user: User = Depends(current_user), session: AsyncSession = Depends(get_session)):
+    memory = await session.get(TasteMemory, user.id)
+    if memory is not None:
+        memory.notes, memory.updated_at = [], utcnow()
+        await session.commit()
+    return await _taste_payload(session, user.id)

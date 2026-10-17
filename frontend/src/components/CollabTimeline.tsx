@@ -1,4 +1,4 @@
-import { AlertTriangle, Bot, ExternalLink, User as UserIcon, Wrench } from 'lucide-react'
+import { AlertTriangle, Bot, ExternalLink, ShieldCheck, User as UserIcon, Wrench } from 'lucide-react'
 
 /*
  * "Who did what": the draft's audit log drawn as two lanes, AI on the left and you on the right
@@ -13,6 +13,7 @@ export interface TimelineEvent {
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null)
+const strs = (v: unknown) => (Array.isArray(v) ? v.filter((b): b is string => typeof b === 'string' && !!b.trim()) : [])
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 function fmtTime(iso: string) {
@@ -37,6 +38,8 @@ interface Described {
   lines: string[]
   quote?: string
   bullets?: string[]
+  notes?: string[] // always-visible list (critic issues, learned preferences)
+  agent?: keyof typeof ACTOR | 'critic' | 'assistant'
   link?: string
   warn?: boolean
 }
@@ -54,9 +57,30 @@ function describe(e: TimelineEvent): Described {
         num(d.tools) ? `${d.tools} editing tool calls` : '',
         str(d.director) && d.director !== 'rules' ? `directed by ${d.director}` : '',
       ]
-      const bullets = Array.isArray(d.summary) ? d.summary.filter((b): b is string => typeof b === 'string') : []
+      const bullets = strs(d.summary)
       return { title: 'Edited the video', lines, bullets }
     }
+    case 'critic_review': {
+      const issues = strs(d.issues)
+      const revised = d.revised === true
+      return {
+        title: 'reviewed the edit before you saw it',
+        agent: 'critic',
+        lines: [
+          d.verdict === 'revise' || issues.length ? `${issues.length} ${issues.length === 1 ? 'issue' : 'issues'} found` : 'looks good',
+          revised ? 'the editor revised it' : issues.length ? 'kept as is' : '',
+        ],
+        notes: issues,
+      }
+    }
+    case 'learned_taste':
+      return { title: 'Learned from your choices', lines: [], notes: strs(d.notes) }
+    case 'assistant_request':
+      return {
+        title: `asked: ${str(d.tool) ?? 'something'}`,
+        agent: d.via === 'mcp' ? 'assistant' : undefined,
+        lines: [],
+      }
     case 'requested_changes':
       return { title: 'Asked for changes', lines: [], quote: str(d.notes) ?? undefined }
     case 'requested_style':
@@ -101,6 +125,8 @@ function describe(e: TimelineEvent): Described {
 const ACTOR = {
   ai: { name: 'AI', icon: Bot, node: 'bg-brand-600 text-on-brand', label: 'text-brand-700' },
   human: { name: 'You', icon: UserIcon, node: 'bg-gold text-brand-900 dark:text-on-brand', label: 'text-ink' },
+  critic: { name: 'Critic agent', icon: ShieldCheck, node: 'border border-info bg-info-soft text-info', label: 'text-info' },
+  assistant: { name: 'Your AI assistant', icon: Bot, node: 'bg-brand-600 text-on-brand', label: 'text-brand-700' },
   system: { name: 'System', icon: Wrench, node: 'bg-surface-2 text-ink-soft border border-line', label: 'text-ink-soft' },
 } as const
 
@@ -145,8 +171,8 @@ export default function CollabTimeline({ events, className = '' }: { events: Tim
         <ol className="relative mt-5 space-y-4">
           <span aria-hidden className="absolute top-2 bottom-2 left-4 w-px bg-line sm:left-1/2 sm:-translate-x-1/2" />
           {events.map((e, i) => {
-            const a = ACTOR[e.actor] || ACTOR.system
             const info = describe(e)
+            const a = ACTOR[info.agent ?? e.actor] || ACTOR.system
             const Icon = info.warn ? AlertTriangle : a.icon
             const gap = i > 0 ? new Date(e.at).getTime() - new Date(events[i - 1].at).getTime() : 0
             const right = e.actor === 'human'
@@ -174,6 +200,16 @@ export default function CollabTimeline({ events, className = '' }: { events: Tim
                     <blockquote className="mt-1.5 inline-block max-w-full rounded-xl bg-surface-2 px-3 py-1.5 text-left text-sm break-words text-ink-soft italic">
                       “{info.quote}”
                     </blockquote>
+                  )}
+                  {info.notes && info.notes.length > 0 && (
+                    <ul className="mt-1.5 inline-block max-w-full space-y-1 rounded-xl bg-surface-2 p-3 text-left text-xs break-words text-ink-soft">
+                      {info.notes.map((n) => (
+                        <li key={n} className="flex gap-2">
+                          <span aria-hidden className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-brand-500" />
+                          <span>{n}</span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                   {info.bullets && info.bullets.length > 0 && (
                     <details className="group mt-1.5">

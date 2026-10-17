@@ -24,7 +24,7 @@ from app.integrations import gateway
 from app.models import BrandProfile, Draft, DraftStatus as S, Message, User, WhatsAppLink, utcnow
 from app.pipeline.render_hyperframes import hyperframes_available
 from app.pipeline.styles import get_preset, next_style
-from app.services import messaging
+from app.services import messaging, taste
 from app.services.audit import audit
 from app.services.publisher import instagram_account
 from app.worker.queue import enqueue
@@ -372,6 +372,7 @@ async def start_draft(ctx: Ctx, src: Path, user_context: str | None) -> Draft | 
 async def approve_video(ctx: Ctx, draft: Draft) -> None:
     draft.video_approved_rev = draft.revision
     audit(ctx.session, ctx.user.id, draft.id, "human", "approved_edit", revision=draft.revision)
+    await taste.queue_learning(ctx.session, ctx.user.id, draft.id)
     if draft.user_context:
         await start_captions(ctx, draft, prefix="Approved ✅\n\n")
     else:
@@ -393,6 +394,7 @@ async def request_changes(ctx: Ctx, draft: Draft, notes: str) -> None:
     draft.revision_notes = [*(draft.revision_notes or []), notes]
     draft.status = S.REVISING
     audit(ctx.session, ctx.user.id, draft.id, "human", "requested_changes", notes=notes)
+    await taste.queue_learning(ctx.session, ctx.user.id, draft.id)
     await enqueue(ctx.session, "revise_video", draft_id=draft.id, payload={}, dedupe_key=f"revise:{draft.id}:n{done + 1}")
     await ctx.say(copy.REVISING.format(n=done + 1, max=settings.max_revisions), draft)
 
@@ -431,6 +433,7 @@ async def discard(ctx: Ctx, draft: Draft) -> None:
     if ctx.user.active_draft_id == draft.id:
         ctx.user.active_draft_id = None
     audit(ctx.session, ctx.user.id, draft.id, "human", "discarded")
+    await taste.queue_learning(ctx.session, ctx.user.id, draft.id)
     await ctx.say(copy.DISCARDED, draft)
 
 
@@ -450,6 +453,7 @@ async def choose_caption(ctx: Ctx, draft: Draft, option: int) -> None:
     draft.hashtags_final = pack.get("hashtags") or []
     draft.caption_approved_at = utcnow()
     audit(ctx.session, ctx.user.id, draft.id, "human", "chose_caption", option=option)
+    await taste.queue_learning(ctx.session, ctx.user.id, draft.id)
     await ask_publish(ctx, draft, prefix=copy.CAPTION_SET + "\n\n")
 
 
@@ -458,6 +462,7 @@ async def set_own_caption(ctx: Ctx, draft: Draft, text: str, hashtags: list[str]
     draft.hashtags_final = hashtags if hashtags is not None else (draft.caption_pack or {}).get("hashtags") or []
     draft.caption_approved_at = utcnow()
     audit(ctx.session, ctx.user.id, draft.id, "human", "wrote_caption")
+    await taste.queue_learning(ctx.session, ctx.user.id, draft.id)
     await ask_publish(ctx, draft, prefix=copy.CAPTION_SET + "\n\n")
 
 

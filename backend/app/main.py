@@ -8,9 +8,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app import mcp_server
 from app.db import init_db
 from app.pipeline.transcribe import warm_up
-from app.routes import admin, auth, brand, chat, drafts, health, instagram, internal_wa, media, whatsapp_link
+from app.routes import admin, auth, brand, chat, drafts, health, instagram, internal_wa, media, tokens, whatsapp_link
 from app.worker import scheduler
 from app.worker.runner import Worker
 
@@ -45,16 +46,22 @@ async def lifespan(app: FastAPI):
     tasks = [asyncio.create_task(worker.run()), asyncio.create_task(scheduler.loop())]
     asyncio.get_running_loop().run_in_executor(None, warm_up)  # load Whisper before the first video
     log.info("%s started (env=%s, base=%s)", settings.app_name, settings.env, settings.app_base_url)
-    yield
-    worker.stop()
-    for task in tasks:
-        task.cancel()
+    try:
+        async with mcp_server.mcp.session_manager.run():
+            yield
+    finally:
+        worker.stop()
+        for task in tasks:
+            task.cancel()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 for router in (health.router, auth.router, whatsapp_link.router, instagram.router, brand.router, drafts.router,
-               chat.router, media.router, admin.router, internal_wa.router):
+               chat.router, media.router, admin.router, internal_wa.router, tokens.router):
     app.include_router(router)
+
+app.add_route("/mcp", mcp_server.mcp_root)  # exact path; the mount handles /mcp/...
+app.mount("/mcp", mcp_server.mcp_app)  # both before the SPA catch-all
 
 static_dir = Path(settings.static_dir)
 if (static_dir / "assets").is_dir():
@@ -63,7 +70,7 @@ if (static_dir / "assets").is_dir():
 
 @app.get("/{path:path}", include_in_schema=False)
 async def spa(path: str):
-    if path.startswith(("api/", "internal/", "media/")):
+    if path.startswith(("api/", "internal/", "media/", "mcp")):
         raise HTTPException(404)
     candidate = (static_dir / path).resolve()
     if path and candidate.is_file() and static_dir.resolve() in candidate.parents:

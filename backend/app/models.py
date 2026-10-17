@@ -210,3 +210,28 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
+
+
+class ApiToken(Base):
+    """Personal tokens for the MCP server. Only the SHA-256 of the token is stored; the user sees it once."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("t"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64), default="AI assistant")
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    prefix: Mapped[str] = mapped_column(String(12))  # first characters, shown so the user can tell tokens apart
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+
+
+class TasteMemory(Base):
+    """What the AI has learned from the creator's own decisions. Short lines the user can read, edit and delete."""
+
+    __tablename__ = "taste_memories"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    notes: Mapped[list] = mapped_column(JSON, default=list)  # ["Keeps hooks under 4 words", ...]
+    signals_seen: Mapped[int] = mapped_column(Integer, default=0)  # human audit events already learned from
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)

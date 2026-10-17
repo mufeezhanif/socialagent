@@ -15,7 +15,7 @@ from app.pipeline.edit import EditInput, EditOutput, run_edit
 from app.pipeline.probe import probe
 from app.pipeline.render_hyperframes import hyperframes_available
 from app.pipeline.styles import get_preset
-from app.services import captions, messaging, publisher
+from app.services import captions, messaging, publisher, taste
 from app.services.audit import audit
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,9 @@ async def _load(draft_id: str) -> tuple[Draft, User, dict] | None:
         handle = await session.scalar(select(InstagramAccount.username).where(InstagramAccount.user_id == draft.user_id))
         if handle:
             brand["handle"] = handle  # shown on brand name tags and end cards
+        learned = await taste.notes_for(session, draft.user_id)
+        if learned:
+            brand["learned_style"] = learned  # the editor and caption prompts read every brand key
         await session.commit()
         return draft, user, brand
 
@@ -123,7 +126,8 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
             tried.append(result.storyboard["style"])
         d.probe = {**result.probe, "face_x": result.face_x, "styles_tried": tried, "motion": result.motion}
         d.transcript = result.transcript
-        d.storyboard = {**result.storyboard, "trace": result.trace, "editor": result.editor}
+        d.storyboard = {**result.storyboard, "trace": result.trace, "editor": result.editor,
+                        **({"critic": result.critic} if result.critic else {})}
         d.style = result.storyboard["style"]
         d.edit_summary = result.summary
         d.master_path, d.preview_path, d.cover_path = str(result.master), str(result.preview), str(result.cover)
@@ -134,6 +138,12 @@ async def _edit(job: Job, *, revision_mode: bool) -> None:
             revision=new_revision, style=d.style, seconds=round(time.time() - started, 1),
             summary=result.summary, director=result.editor, tools=len(result.trace),
         )
+        if result.critic:
+            audit(
+                session, user.id, d.id, "ai", "critic_review", agent="critic",
+                verdict=result.critic["verdict"], revised=result.critic["revised"],
+                issues=[i["problem"] for i in result.critic["issues"]],
+            )
         if d.status == expected:  # the user may have moved on (sent a new video, discarded)
             d.status = S.AWAITING_VIDEO_APPROVAL
             await _send_preview(Ctx(session, user, d.channel, d.chat_ref), d, result)
@@ -240,5 +250,6 @@ HANDLERS = {
     "revise_video": revise_video,
     "caption_pack": caption_pack,
     "publish": publish,
+    "learn_taste": taste.learn,
 }
 HEAVY = {"process_video", "revise_video"}

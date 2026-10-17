@@ -107,8 +107,10 @@ async def generate(
         f"What the video shows: {storyboard.get('scene_description') or '(unknown)'}",
         f"On-screen hook: {storyboard.get('hook_text') or '(none)'}",
         f"User notes: {user_context or '(none)'}",
-        f"Brand kit: {json.dumps({k: v for k, v in brand.items() if v and k not in VISUAL_KEYS}, ensure_ascii=False)}",
+        f"Brand kit: {json.dumps({k: v for k, v in brand.items() if v and k not in VISUAL_KEYS | {"learned_style"}}, ensure_ascii=False)}",
     ]
+    if brand.get("learned_style"):
+        lines.append("Creator's learned preferences (follow them): " + "; ".join(brand["learned_style"]))
     if previous_pack and tweak:
         lines.append(f"Previous options: {json.dumps(previous_pack.get('options'), ensure_ascii=False)}")
         lines.append(f"Tweak request: {tweak}")

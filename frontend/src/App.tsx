@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, LayoutGrid, LogOut, MessageCircle, Palette, Shield } from 'lucide-react'
+import { CalendarDays, LayoutGrid, LogOut, MessageCircle, Palette, Plug, Shield } from 'lucide-react'
 import { api, type Me } from './api'
 import { Logo, Spinner } from './ui'
 import { ThemeToggle } from './theme'
@@ -13,6 +13,7 @@ import DraftDetailPage from './pages/DraftDetail'
 import Chat from './pages/Chat'
 import Calendar from './pages/Calendar'
 import BrandPage from './pages/Brand'
+import Connect from './pages/Connect'
 import Admin from './pages/Admin'
 import { DataDeletion, Privacy, Terms } from './pages/Legal'
 
@@ -71,6 +72,9 @@ function Shell({ children }: { children: ReactNode }) {
             <NavLink to="/app/brand" className={link}>
               <Palette className="h-4 w-4" /> Brand kit
             </NavLink>
+            <NavLink to="/app/connect" className={link}>
+              <Plug className="h-4 w-4" /> AI assistants
+            </NavLink>
             {me.data?.is_admin && (
               <NavLink to="/app/admin" className={link}>
                 <Shield className="h-4 w-4" /> Admin
@@ -105,6 +109,7 @@ export default function App() {
       <Route path="/app/chat" element={inApp(<Chat />)} />
       <Route path="/app/calendar" element={inApp(<Calendar />)} />
       <Route path="/app/brand" element={inApp(<BrandPage />)} />
+      <Route path="/app/connect" element={inApp(<Connect />)} />
       <Route path="/app/admin" element={inApp(<Admin />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

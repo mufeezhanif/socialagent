@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
+import { Brain, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api, type Brand } from '../api'
-import { Button, Card, Field, Input, Spinner, Textarea } from '../ui'
+import { Button, Card, Field, Input, Spinner, Textarea, fmtDate } from '../ui'
 
 const STYLE_HINTS: Record<string, string> = {
   clean: 'Simple, readable, natural colour',
@@ -120,6 +121,150 @@ export function BrandForm({ compact = false, onSaved }: { compact?: boolean; onS
   )
 }
 
+interface Taste {
+  notes: string[]
+  updated_at: string | null
+  signals_seen: number
+}
+
+const MAX_NOTES = 8
+const MAX_LINE = 120
+
+function TasteMemory() {
+  const qc = useQueryClient()
+  const taste = useQuery({ queryKey: ['taste'], queryFn: () => api<Taste>('/api/brand/taste') })
+  const [editing, setEditing] = useState<number | null>(null)
+  const [draft, setDraft] = useState('')
+  const [adding, setAdding] = useState('')
+  const [busy, setBusy] = useState(false)
+  if (!taste.data) return taste.isError ? <p className="text-sm text-danger">Could not load what the AI learned.</p> : <Spinner />
+  const notes = taste.data.notes
+
+  const save = async (next: string[]) => {
+    setBusy(true)
+    try {
+      const saved = await api<Taste>('/api/brand/taste', { method: 'PUT', json: { notes: next } })
+      qc.setQueryData(['taste'], saved)
+      setEditing(null)
+      return true
+    } catch (err) {
+      toast.error((err as Error).message)
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+  const clear = async () => {
+    if (!window.confirm('Forget everything the AI learned about your style?')) return
+    setBusy(true)
+    try {
+      qc.setQueryData(['taste'], await api<Taste>('/api/brand/taste', { method: 'DELETE' }))
+      setEditing(null)
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const commitEdit = () => {
+    const text = draft.trim()
+    if (editing === null) return
+    if (!text) return void save(notes.filter((_, i) => i !== editing))
+    void save(notes.map((n, i) => (i === editing ? text : n)))
+  }
+  const add = async () => {
+    const text = adding.trim()
+    if (text && (await save([...notes, text]))) setAdding('')
+  }
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight">
+            <Brain className="h-5 w-5 text-brand-600" /> What the AI learned about your style
+          </h2>
+          <p className="text-sm text-ink-soft">
+            Learned from your own choices. Every edit and caption follows these. Edit or delete anything you disagree with.
+          </p>
+        </div>
+        {notes.length > 0 && (
+          <Button variant="danger" onClick={clear} disabled={busy} className="px-3 py-1.5">
+            Clear all
+          </Button>
+        )}
+      </div>
+
+      {notes.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-line bg-surface-2/50 px-4 py-5 text-center text-sm text-ink-soft">
+          Ask for changes or pick captions and I'll learn your style.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {notes.map((note, i) => (
+            <li key={`${i}-${note}`} className="flex items-center gap-2 rounded-xl border border-line bg-surface-2/50 px-3 py-2">
+              {editing === i ? (
+                <>
+                  <Input
+                    autoFocus
+                    value={draft}
+                    maxLength={MAX_LINE}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitEdit()
+                      if (e.key === 'Escape') setEditing(null)
+                    }}
+                  />
+                  <Button variant="ghost" aria-label="Save" onClick={commitEdit} disabled={busy} className="px-2 py-2">
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" aria-label="Cancel" onClick={() => setEditing(null)} className="px-2 py-2">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="min-w-0 flex-1 break-words text-sm text-ink">{note}</span>
+                  <Button
+                    variant="ghost"
+                    aria-label="Edit"
+                    onClick={() => {
+                      setEditing(i)
+                      setDraft(note)
+                    }}
+                    className="px-2 py-2"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" aria-label="Delete" onClick={() => save(notes.filter((_, j) => j !== i))} disabled={busy} className="px-2 py-2">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {notes.length < MAX_NOTES && (
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void add()
+          }}
+        >
+          <Input value={adding} maxLength={MAX_LINE} onChange={(e) => setAdding(e.target.value)} placeholder="Add a preference, e.g. No emojis in captions" />
+          <Button type="submit" variant="secondary" disabled={!adding.trim() || busy} aria-label="Add a preference">
+            <Plus className="h-4 w-4" /> Add
+          </Button>
+        </form>
+      )}
+      {taste.data.updated_at && notes.length > 0 && <p className="text-xs text-ink-faint">Last updated {fmtDate(taste.data.updated_at)}</p>}
+    </Card>
+  )
+}
+
 export default function BrandPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -130,6 +275,7 @@ export default function BrandPage() {
       <Card>
         <BrandForm />
       </Card>
+      <TasteMemory />
     </div>
   )
 }

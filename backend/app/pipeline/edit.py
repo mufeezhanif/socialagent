@@ -1,12 +1,14 @@
 """Full edit: probe -> transcribe -> face focus -> director -> cuts -> captions -> render."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from app.config import settings
 from app.integrations import llm
-from app.pipeline.cuts import keep_segments, output_duration
+from app.pipeline import critic
+from app.pipeline.cuts import Segment, keep_segments, output_duration
 from app.pipeline.editor_agent import run_editor
 from app.pipeline.faces import face_center
 from app.pipeline.genres import LOOK_SUMMARY, MUSIC_LABEL, Recipe, cut_points, find_track, get_recipe, plan_sfx, sfx_file
@@ -57,6 +59,7 @@ class EditOutput:
     motion: bool = False
     editor: str = "rules"
     trace: list[str] = field(default_factory=list)
+    critic: dict = field(default_factory=dict)  # verdict, issues, revised, seconds
 
 
 def vocabulary_hint(user_context: str | None, brand: dict) -> str | None:
@@ -134,15 +137,85 @@ def make_summary(
     return bullets
 
 
+@dataclass
+class _Shared:
+    """What every editing pass over the same clip reuses."""
+    probe: ProbeInfo
+    vocab: str | None
+    transcript: dict
+    face_x: float | None
+    frames: list[Path]
+
+    @property
+    def words(self) -> list[dict]:
+        return self.transcript.get("words", [])
+
+
 async def run_edit(inp: EditInput) -> EditOutput:
     inp.workdir.mkdir(parents=True, exist_ok=True)
     probe = ProbeInfo.from_dict(inp.probe) if inp.probe else await probe_file(str(inp.src))
     vocab = vocabulary_hint(inp.user_context, inp.brand)
     transcript = inp.transcript if inp.transcript is not None else await transcribe(str(inp.src), vocab)
-    words = transcript.get("words", [])
     face_x = inp.face_x if inp.face_checked else await face_center(str(inp.src), probe.duration)
-
     frames = await sample_frames(str(inp.src), probe.duration, inp.workdir / "frames") if llm.any_configured() else []
+    shared = _Shared(probe, vocab, transcript, face_x, frames)
+
+    first, segments = await _produce(inp, shared, inp.change_requests, inp.previous_storyboard, inp.workdir)
+    if not settings.critic_enabled:
+        return first
+
+    async def again(change_requests: list[str], previous: dict) -> EditOutput | None:
+        got = await _produce(inp, shared, change_requests, previous, inp.workdir / "critic", skip_if_same=previous)
+        return got[0] if got else None
+
+    def review(out: EditOutput) -> Awaitable[critic.CriticReport]:
+        removed = removed_word_set(Storyboard.model_validate(out.storyboard))
+        return critic.review(
+            preview=out.preview, storyboard=out.storyboard, words=shared.words, segments=segments, removed=removed,
+            out_duration=out.duration_out, probe_duration=probe.duration,
+            notes=[inp.user_context or "", *inp.change_requests], brand=inp.brand, workdir=inp.workdir,
+            target=inp.target_seconds,
+        )
+
+    return await critic_round(first, inp.change_requests, review, again)
+
+
+async def critic_round(first: EditOutput, change_requests: list[str], review: Callable[[EditOutput], Awaitable[critic.CriticReport]],
+                       again: Callable[[list[str], dict], Awaitable[EditOutput | None]]) -> EditOutput:
+    """One review of `first`; if it has high severity issues, ONE more editor pass with the critic's fixes. Never loops,
+    never raises: any failure ships the first render."""
+    try:
+        report = await review(first)
+    except Exception as exc:
+        log.warning("critic round failed: %s", exc)
+        return first
+    revised, out = False, first
+    if report.high:
+        fixes = [f"Critic note: {i.fix}" for i in report.high]
+        try:
+            second = await again([*change_requests, *fixes], first.storyboard)
+        except Exception as exc:
+            log.warning("critic-driven edit failed, keeping the first render: %s", exc)
+            second = None
+        if second is not None:
+            out, revised = second, True
+    if report.high and revised:
+        note = f"Quality check: fixed {report.high[0].problem[0].lower() + report.high[0].problem[1:]}"
+    elif report.high:
+        note = f"Quality check: flagged {report.high[0].problem[0].lower() + report.high[0].problem[1:]}, kept as is"
+    else:
+        note = "Quality check: passed"
+    out.summary = [*out.summary, note]
+    out.critic = report.to_dict(revised)
+    return out
+
+
+async def _produce(inp: EditInput, shared: _Shared, change_requests: list[str], previous: dict | None, workdir: Path,
+                   skip_if_same: dict | None = None) -> tuple[EditOutput, list[Segment]] | None:
+    """One editor + render pass. With `skip_if_same`, returns None if the editor changed nothing (no point rendering)."""
+    workdir.mkdir(parents=True, exist_ok=True)
+    probe, vocab, transcript, face_x, frames = shared.probe, shared.vocab, shared.transcript, shared.face_x, shared.frames
+    words = shared.words
     editor = await run_editor(
         frames=frames,
         words=words,
@@ -151,13 +224,16 @@ async def run_edit(inp: EditInput) -> EditOutput:
         style_request=inp.style_request,
         user_context=inp.user_context,
         brand=inp.brand,
-        change_requests=inp.change_requests,
-        previous=inp.previous_storyboard,
+        change_requests=change_requests,
+        previous=previous,
         motion_requested=inp.motion,
         target_seconds=inp.target_seconds,
         segments=transcript.get("segments"),
         language=transcript.get("language"),
     )
+    if skip_if_same is not None and editor.storyboard.model_dump() == {k: v for k, v in skip_if_same.items()
+                                                                       if k in editor.storyboard.model_dump()}:
+        return None
     sb, from_ai = editor.storyboard, editor.from_ai
     want_motion = inp.motion or editor.motion
 
@@ -202,7 +278,7 @@ async def run_edit(inp: EditInput) -> EditOutput:
     )
     ass_file = None
     if ass_text:
-        ass_file = inp.workdir / "captions.ass"
+        ass_file = workdir / "captions.ass"
         ass_file.write_text(ass_text, encoding="utf-8")
 
     music = pick_music(recipe, sb.style) if sb.music else None
@@ -229,7 +305,7 @@ async def run_edit(inp: EditInput) -> EditOutput:
         try:
             motion_sfx = plan_sounds(recipe, sb, words, segments, removed, highlight_times, out_duration,
                                      emojis=caption_words is words)  # emoji pops are drawn by the motion layer
-            base = await render(inp.src, probe, replace(plan, ass_file=None, sfx=motion_sfx), inp.workdir, fonts,
+            base = await render(inp.src, probe, replace(plan, ass_file=None, sfx=motion_sfx), workdir, fonts,
                                 out_name="base.mp4")
             motion_sb = {**sb.model_dump(), "highlight_word_indices": sorted(caption_hl), "emoji_moments": []
                          if caption_words is not words else sb.model_dump()["emoji_moments"]}
@@ -237,13 +313,13 @@ async def run_edit(inp: EditInput) -> EditOutput:
                 words=caption_words, segments=segments, removed=caption_removed, preset=preset,
                 out_duration=out_duration, storyboard=motion_sb, accent=accent,
             )
-            master = await render_motion(base, data, inp.workdir)
+            master = await render_motion(base, data, workdir)
             used_motion = True
         except Exception as exc:
             log.warning("motion render failed, using the standard edit: %s", exc)
     if not used_motion:
-        master = await render(inp.src, probe, plan, inp.workdir, fonts)
-    outputs = await finalize(master, out_duration, inp.workdir)
+        master = await render(inp.src, probe, plan, workdir, fonts)
+    outputs = await finalize(master, out_duration, workdir)
 
     summary = make_summary(
         probe.duration, out_duration, sb, reframe, preset, probe.has_audio, bool(sb.captions_enabled and words),
@@ -255,7 +331,7 @@ async def run_edit(inp: EditInput) -> EditOutput:
         summary.insert(-1, "Motion graphics: kinetic captions, zoom punches, emoji pops, end card")
     elif want_motion:
         summary.append("Motion graphics aren't available right now, so this is the standard edit")
-    return EditOutput(
+    out = EditOutput(
         master=outputs["master"],
         preview=outputs["preview"],
         cover=outputs["cover"],
@@ -272,3 +348,4 @@ async def run_edit(inp: EditInput) -> EditOutput:
         editor=editor.editor,
         trace=editor.trace,
     )
+    return out, segments

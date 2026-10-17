@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-5-5"
 
+    critic_enabled: bool = True  # a critic agent reviews each render and may send the editor back once
+
     whisper_model: str = "small"
     whisper_compute_type: str = "int8"
     whisper_model_dir: str = ""
