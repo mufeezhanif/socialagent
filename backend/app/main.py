@@ -11,7 +11,7 @@ from app.config import settings
 from app import mcp_server
 from app.db import init_db
 from app.pipeline.transcribe import warm_up
-from app.routes import admin, auth, brand, chat, drafts, health, instagram, internal_wa, media, tokens, whatsapp_link
+from app.routes import admin, auth, brand, chat, drafts, facebook, health, instagram, internal_wa, media, tokens, whatsapp_link
 from app.worker import scheduler
 from app.worker.runner import Worker
 
@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 for router in (health.router, auth.router, whatsapp_link.router, instagram.router, brand.router, drafts.router,
-               chat.router, media.router, admin.router, internal_wa.router, tokens.router):
+               chat.router, media.router, admin.router, internal_wa.router, tokens.router, facebook.router):
     app.include_router(router)
 
 app.add_route("/mcp", mcp_server.mcp_root)  # exact path; the mount handles /mcp/...

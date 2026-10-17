@@ -107,6 +107,10 @@ function describe(e: TimelineEvent): Described {
       return { title: 'Unscheduled', lines: [] }
     case 'published':
       return { title: 'Published to Instagram', lines: [], link: str(d.permalink) ?? undefined }
+    case 'published_facebook':
+      return { title: 'Cross-posted to the Facebook Page', lines: [], link: str(d.permalink) ?? undefined }
+    case 'facebook_failed':
+      return { title: 'Facebook rejected the cross-post', lines: [str(d.error) ?? ''], warn: true }
     case 'publish_blocked':
       return { title: 'Publish blocked by the approval gate', lines: [str(d.reason) ?? ''], warn: true }
     case 'publish_failed':

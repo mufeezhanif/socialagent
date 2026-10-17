@@ -65,6 +65,8 @@ SCHEDULED = "🗓 Scheduled for {when} ✅\nReply *cancel* to unschedule or *now
 UNSCHEDULED = "Unscheduled. Reply 1 to post now, 2 to pick a new time or 3 to save."
 PUBLISHING = "🚀 Posting to Instagram..."
 PUBLISHED = "🎉 Live on Instagram: {permalink}"
+PUBLISHED_FACEBOOK = "📘 Also live on your Facebook Page: {permalink}"
+FACEBOOK_FAILED = "⚠️ Instagram is live, but Facebook didn't accept the Reel: {error}"
 PUBLISH_FAILED = "⚠️ Instagram didn't accept the post: {error}\nReply *retry* to try again."
 SAVED = "💾 Saved as a draft. Find it on your dashboard: {url}"
 

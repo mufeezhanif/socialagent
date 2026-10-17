@@ -97,6 +97,19 @@ class InstagramAccount(Base):
     connected_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 
 
+class FacebookPage(Base):
+    __tablename__ = "facebook_pages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=lambda: new_id("fb"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    page_id: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(200), default="")
+    picture_url: Mapped[str] = mapped_column(Text, default="")
+    access_token_enc: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="ok")
+    connected_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
 class BrandProfile(Base):
     __tablename__ = "brand_profiles"
 

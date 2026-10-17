@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     ig_app_secret: str = ""
     ig_redirect_uri: str = ""
     ig_graph_version: str = "v25.0"
+    fb_app_id: str = ""
+    fb_app_secret: str = ""
+    fb_redirect_uri: str = ""
+    fb_login_config_id: str = ""  # Facebook Login for Business configuration (business apps ignore `scope`)
+    fb_graph_version: str = "v25.0"
     publish_dry_run: bool = False  # dev only: pretend to publish when Instagram isn't configured
 
     gateway_url: str = "http://127.0.0.1:3001"
@@ -97,6 +102,10 @@ class Settings(BaseSettings):
     @property
     def instagram_redirect_uri(self) -> str:
         return self.ig_redirect_uri or f"{self.app_base_url.rstrip('/')}/api/instagram/callback"
+
+    @property
+    def facebook_redirect_uri(self) -> str:
+        return self.fb_redirect_uri or f"{self.app_base_url.rstrip('/')}/api/facebook/callback"
 
 
 @lru_cache

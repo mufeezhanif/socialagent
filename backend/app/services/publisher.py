@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.integrations import instagram_api
-from app.models import Draft, InstagramAccount
+from app.integrations import facebook_api, instagram_api
+from app.models import Draft, FacebookPage, InstagramAccount
 from app.security import decrypt_text, media_url
 from app.services.captions import full_caption
 
@@ -36,6 +36,27 @@ def check_gates(draft: Draft) -> None:
 
 async def instagram_account(session: AsyncSession, user_id: str) -> InstagramAccount | None:
     return await session.scalar(select(InstagramAccount).where(InstagramAccount.user_id == user_id))
+
+
+async def facebook_page(session: AsyncSession, user_id: str) -> FacebookPage | None:
+    return await session.scalar(select(FacebookPage).where(FacebookPage.user_id == user_id))
+
+
+async def publish_facebook(session: AsyncSession, draft: Draft) -> str | None:
+    """Cross-post the same approved Reel to the connected Facebook Page. Returns the permalink, or None if no Page."""
+    check_gates(draft)
+    page = await facebook_page(session, draft.user_id)
+    if page is None:
+        return None
+    token = decrypt_text(page.access_token_enc)
+    if not token:
+        raise PublishError("Facebook token unreadable; please reconnect Facebook")
+    caption = full_caption(draft.caption_final or "", draft.hashtags_final or [])
+    try:
+        _, permalink = await facebook_api.publish_reel(page.page_id, token, draft.master_path, caption)
+    except facebook_api.FacebookError as exc:
+        raise PublishError(str(exc)) from exc
+    return permalink
 
 
 async def publish(session: AsyncSession, draft: Draft) -> tuple[str, str]:

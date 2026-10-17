@@ -242,6 +242,23 @@ async def _publish(job: Job) -> None:
         audit(session, user.id, draft.id, "ai", "published", permalink=permalink, at=utcnow().isoformat())
         await ctx.say(copy.PUBLISHED.format(permalink=permalink), draft)
         await session.commit()
+        await _cross_post_facebook(session, ctx, user, draft)
+
+
+async def _cross_post_facebook(session, ctx: Ctx, user: User, draft: Draft) -> None:
+    """Same approved Reel to the Facebook Page; Instagram is already live, so a failure here is only reported."""
+    try:
+        fb_link = await publisher.publish_facebook(session, draft)
+    except Exception as exc:
+        log.warning("facebook cross-post failed for %s: %s", draft.id, exc)
+        audit(session, user.id, draft.id, "system", "facebook_failed", error=str(exc)[:300])
+        await ctx.say(copy.FACEBOOK_FAILED.format(error=str(exc)[:200]), draft)
+        await session.commit()
+        return
+    if fb_link:
+        audit(session, user.id, draft.id, "ai", "published_facebook", permalink=fb_link, at=utcnow().isoformat())
+        await ctx.say(copy.PUBLISHED_FACEBOOK.format(permalink=fb_link), draft)
+        await session.commit()
 
 
 HANDLERS = {

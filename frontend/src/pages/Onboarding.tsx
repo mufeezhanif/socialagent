@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { api, type InstagramStatus, type Me } from '../api'
 import { Button, Card, Input, Logo } from '../ui'
 import { BrandForm } from './Brand'
+import { FacebookConnect } from '../components/FacebookConnect'
 import { ThemeToggle } from '../theme'
 
 interface LinkInfo {
@@ -174,6 +175,7 @@ export default function Onboarding() {
               )}
             </div>
           )}
+          <FacebookConnect />
         </Step>
 
         <Step n={2} title="Link WhatsApp" done={waDone} icon={MessageCircle}>
