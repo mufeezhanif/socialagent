@@ -369,6 +369,14 @@ def _apply_tool(state: dict, name: str, args: dict, words: list[dict], duration:
     return f"error: unknown tool {name}"
 
 
+def grounded_cta(cta: str, sources: list[str]) -> bool:
+    """A call to action must come from the user: one of its key words appears in the notes, change requests or brand
+    kit ("Follow for more tips" with no such ask is invented)."""
+    keys = {w for w in re.findall(r"[a-z0-9']+", cta.lower()) if len(w) > 3}
+    text = " ".join(sources).lower()
+    return not keys or any(k in text for k in keys)
+
+
 def drop_orphans(state: dict, words: list[dict], duration: float) -> list[str]:
     """Remove short leftovers stranded between two cuts ("This a pure definition of"): they read as glitches."""
     removed = removed_word_set(to_storyboard(state, len(words), duration))
@@ -688,6 +696,10 @@ async def run_editor(
 
     def finish(state: dict, from_ai: bool, editor: str, trace: list[str], usage: dict | None = None) -> EditorResult:
         trace = trace + drop_orphans(state, words, duration)
+        if state.get("cta_text") and not grounded_cta(state["cta_text"], [(brand or {}).get("cta") or "", user_context or "",
+                                                                         *change_requests]):
+            trace = trace + [f"dropped call to action {state['cta_text']!r}: not in the notes or brand kit"]
+            state["cta_text"] = ""
         if target:  # safety net: whoever edited, the result honours the requested length
             trace = trace + fit_to_target(state, words, units, duration, target)
         if usage and (usage.get("input") or usage.get("output")):

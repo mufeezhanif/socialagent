@@ -2,7 +2,8 @@ import asyncio
 import json
 
 from app.integrations import llm
-from app.pipeline.editor_agent import apply_rules, apply_tool, find_phrase, initial_state, run_editor, to_storyboard
+from app.pipeline.editor_agent import (apply_rules, apply_tool, find_phrase, grounded_cta, initial_state, run_editor,
+                                       to_storyboard)
 from app.services.captions import CaptionPack
 
 
@@ -125,3 +126,10 @@ def test_chain_puts_claude_where_configured(monkeypatch):
     assert llm.chain() == [groq, None]
     monkeypatch.setattr(llm.claude, "enabled", lambda: False)
     assert llm.chain() == [groq]
+
+
+def test_cta_must_come_from_the_user():
+    assert not grounded_cta("Follow for more tips", ["", "", "day at NASCON with my friends"])
+    assert grounded_cta("Order via the link in bio", ["", "promo, order via the link in bio"])
+    assert grounded_cta("Link in bio", ["Link in bio for orders"])  # brand kit CTA
+    assert grounded_cta("DM us", [])  # nothing checkable: keep

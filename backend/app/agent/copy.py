@@ -54,7 +54,10 @@ FACT_CHECK = "\n\n⚠️ Please double-check: {facts}"
 CAPTION_SET = "Caption locked ✅"
 
 ASK_PUBLISH = "Post now or later?\n1 🚀 post now\n2 🗓 schedule\n3 💾 save as draft"
-NEED_INSTAGRAM = "Connect Instagram first so I can post: {url}\nYour draft is saved."
+NEED_INSTAGRAM = (
+    "Instagram isn't connected yet: {url}\n"
+    "Connect it, then reply 1 🚀 to post now or 2 🗓 to schedule. Reply 3 💾 to save it as a draft."
+)
 ASK_TIME = 'When should I post? e.g. "today 8pm", "tomorrow 9am", "in 2 hours".\nSuggested: {suggestion}'
 TIME_UNCLEAR = 'I couldn\'t read that time. Try "today 8pm", "tomorrow 10am" or "in 30 minutes".'
 TIME_PAST = "That time has already passed. Pick a time in the future."

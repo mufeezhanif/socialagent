@@ -466,9 +466,8 @@ async def _instagram_ready(ctx: Ctx) -> bool:
 
 async def ask_publish(ctx: Ctx, draft: Draft, prefix: str = "") -> None:
     draft.status = S.AWAITING_PUBLISH_CHOICE
-    if not await _instagram_ready(ctx):
-        prefix += copy.NEED_INSTAGRAM.format(url=dashboard_url("/onboarding")) + "\n\n"
-    await ctx.say(prefix + copy.ASK_PUBLISH, draft)
+    ask = copy.ASK_PUBLISH if await _instagram_ready(ctx) else copy.NEED_INSTAGRAM.format(url=dashboard_url("/onboarding"))
+    await ctx.say(prefix + ask, draft)
 
 
 async def publish_now(ctx: Ctx, draft: Draft) -> None:
